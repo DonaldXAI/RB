@@ -1,6 +1,11 @@
 import "dotenv/config";
 import { Connection, PublicKey } from "@solana/web3.js";
 import { createClient } from "@supabase/supabase-js";
+import WebSocket from "ws";
+
+if (typeof globalThis.WebSocket === "undefined") {
+  globalThis.WebSocket = WebSocket as unknown as typeof globalThis.WebSocket;
+}
 import bs58 from "bs58";
 import OpenAI from "openai";
 import { z } from "zod";
