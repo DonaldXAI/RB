@@ -62,22 +62,26 @@ export async function requireAdmin(req: Request, _res: Response, next: NextFunct
     );
     if (!valid) throw new HttpError(401, "Admin signature is not valid");
 
-    const known = await supabase.from("admin_nonces").select("nonce").eq("nonce", nonce).maybeSingle();
-    if (known.error) {
-      console.error(`[admin] nonce lookup failed: ${known.error.message}`);
+    const seen = await supabase.from("admin_nonces").select("message").eq("nonce", nonce).maybeSingle();
+    if (seen.error) {
+      console.error(`[admin] nonce lookup failed: ${seen.error.message}`);
       throw new HttpError(500, "Could not verify admin request");
     }
-    if (known.data) throw new HttpError(401, "Replay detected");
-
-    const stored = await supabase.from("admin_nonces").insert({
-      nonce,
-      admin_wallet: wallet,
-      message_timestamp: new Date(issuedAt).toISOString(),
-    });
-    if (stored.error) {
-      if (stored.error.code === "23505") throw new HttpError(401, "Replay detected");
-      console.error(`[admin] nonce insert failed: ${stored.error.message}`);
-      throw new HttpError(500, "Could not verify admin request");
+    if (seen.data && seen.data.message !== message) {
+      throw new HttpError(401, "Nonce already used");
+    }
+    if (!seen.data) {
+      const stored = await supabase.from("admin_nonces").insert({
+        nonce,
+        admin_wallet: wallet,
+        message,
+        message_timestamp: new Date(issuedAt).toISOString(),
+      });
+      if (stored.error) {
+        if (stored.error.code === "23505") throw new HttpError(401, "Nonce already used");
+        console.error(`[admin] nonce insert failed: ${stored.error.message}`);
+        throw new HttpError(500, "Could not verify admin request");
+      }
     }
 
     req.adminWallet = wallet;

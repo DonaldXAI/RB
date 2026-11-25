@@ -129,6 +129,7 @@ create table public.used_transactions (
 create table public.admin_nonces (
   nonce text primary key,
   admin_wallet text not null,
+  message text not null,
   message_timestamp timestamptz not null default now(),
   created_at timestamptz not null default now()
 );
