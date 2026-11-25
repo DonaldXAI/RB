@@ -7,6 +7,17 @@ router.get("/", (_req, res) => {
   res.json({
     ok: true,
     service: "raidhive-backend",
+    cors: {
+      allowedHeaders: [
+        "Content-Type",
+        "Authorization",
+        "x-admin-wallet",
+        "x-admin-message",
+        "x-admin-signature",
+        "x-admin-nonce",
+        "x-admin-timestamp",
+      ],
+    },
     routes: [
       "GET /health",
       "GET /api",

@@ -30,6 +30,17 @@ const PRODUCTION_ORIGINS = [
 
 const allowedOrigins = new Set<string>([...PRODUCTION_ORIGINS, config.FRONTEND_ORIGIN, ...config.corsExtraOrigins]);
 
+/** Browsers preflight these on cross-origin admin + authenticated API calls. */
+const corsAllowedHeaders = [
+  "Content-Type",
+  "Authorization",
+  "x-admin-wallet",
+  "x-admin-message",
+  "x-admin-signature",
+  "x-admin-nonce",
+  "x-admin-timestamp",
+] as const;
+
 const app = express();
 app.disable("x-powered-by");
 app.set("trust proxy", 1);
@@ -41,6 +52,9 @@ app.use(
       if (allowedOrigins.has(origin)) return callback(null, true);
       callback(new Error("Origin is not allowed"));
     },
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: [...corsAllowedHeaders],
+    exposedHeaders: ["Content-Type"],
   }),
 );
 app.use(express.json({ limit: "32kb" }));
