@@ -1,9 +1,77 @@
 import { Router } from "express";
-import { supabase, throwDb } from "../config.js";
+import { z } from "zod";
+import { parseBody, supabase, throwDb } from "../config.js";
 import { currentUser, requireUser } from "../middleware/auth.js";
 
 const router = Router();
 router.use(requireUser);
+
+const PreferencesSchema = z
+  .object({
+    email: z.boolean().optional(),
+    push: z.boolean().optional(),
+    raidUpdates: z.boolean().optional(),
+    payoutUpdates: z.boolean().optional(),
+    campaignUpdates: z.boolean().optional(),
+    marketing: z.boolean().optional(),
+  })
+  .strict();
+
+const defaultPreferences = {
+  email: true,
+  push: true,
+  raidUpdates: true,
+  payoutUpdates: true,
+  campaignUpdates: true,
+  marketing: false,
+};
+
+async function loadPreferences(userId: string): Promise<Record<string, boolean>> {
+  const row = await supabase
+    .from("profiles")
+    .select("notification_preferences, ai_verification_notes")
+    .eq("id", userId)
+    .maybeSingle();
+  if (row.error) throwDb(row.error, "load notification preferences");
+  const stored = row.data?.notification_preferences as Record<string, boolean> | null;
+  if (stored && typeof stored === "object") {
+    return { ...defaultPreferences, ...stored };
+  }
+  const notes = row.data?.ai_verification_notes as { notificationPreferences?: Record<string, boolean> } | null;
+  if (notes?.notificationPreferences) {
+    return { ...defaultPreferences, ...notes.notificationPreferences };
+  }
+  return { ...defaultPreferences };
+}
+
+async function savePreferences(userId: string, prefs: Record<string, boolean>): Promise<Record<string, boolean>> {
+  const merged = { ...(await loadPreferences(userId)), ...prefs };
+  const primary = await supabase
+    .from("profiles")
+    .update({ notification_preferences: merged })
+    .eq("id", userId)
+    .select("notification_preferences")
+    .maybeSingle();
+
+  if (primary.error && primary.error.message.includes("notification_preferences")) {
+    const notesRow = await supabase.from("profiles").select("ai_verification_notes").eq("id", userId).maybeSingle();
+    if (notesRow.error) throwDb(notesRow.error, "load profile notes");
+    const prior = (notesRow.data?.ai_verification_notes ?? {}) as Record<string, unknown>;
+    const fallback = await supabase
+      .from("profiles")
+      .update({
+        ai_verification_notes: { ...prior, notificationPreferences: merged },
+      })
+      .eq("id", userId)
+      .select("ai_verification_notes")
+      .maybeSingle();
+    if (fallback.error) throwDb(fallback.error, "save notification preferences");
+    return merged;
+  }
+
+  if (primary.error) throwDb(primary.error, "save notification preferences");
+  return (primary.data?.notification_preferences as Record<string, boolean>) ?? merged;
+}
 
 type NotificationItem = {
   id: string;
@@ -125,9 +193,22 @@ router.get("/", async (req, res, next) => {
   }
 });
 
-router.patch("/:id/read", async (req, res, next) => {
+router.get("/preferences", async (req, res, next) => {
   try {
-    res.json({ ok: true, id: req.params.id, read: true });
+    const user = currentUser(req);
+    const preferences = await loadPreferences(user.id);
+    res.json({ ok: true, preferences });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/preferences", async (req, res, next) => {
+  try {
+    const user = currentUser(req);
+    const body = parseBody(PreferencesSchema, req.body ?? {});
+    const preferences = await savePreferences(user.id, body);
+    res.json({ ok: true, preferences });
   } catch (error) {
     next(error);
   }
@@ -137,6 +218,14 @@ router.post("/read-all", async (req, res, next) => {
   try {
     currentUser(req);
     res.json({ ok: true, read: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.patch("/:id/read", async (req, res, next) => {
+  try {
+    res.json({ ok: true, id: req.params.id, read: true });
   } catch (error) {
     next(error);
   }

@@ -12,6 +12,7 @@ import notificationsRouter from "./routes/notifications.js";
 import payoutsRouter from "./routes/payouts.js";
 import { raidVerifyHandler } from "./routes/raids.js";
 import raidsRouter from "./routes/raids.js";
+import metaRouter from "./routes/meta.js";
 import socialRouter from "./routes/social.js";
 import { requireUser } from "./middleware/auth.js";
 import { raidsSubmitLimiter } from "./middleware/rateLimits.js";
@@ -53,8 +54,10 @@ app.get("/health", (_req, res) => {
   res.json({ ok: true });
 });
 
+app.use("/api", metaRouter);
 app.use("/api/campaigns", campaignsRouter);
 app.post("/api/verify", requireUser, raidsSubmitLimiter, raidVerifyHandler);
+app.post("/verify", requireUser, raidsSubmitLimiter, raidVerifyHandler);
 app.use("/api/raids", raidsRouter);
 app.use("/api/founders", foundersRouter);
 app.use("/api/notifications", notificationsRouter);

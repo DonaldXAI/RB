@@ -54,7 +54,7 @@ router.get("/my-ads", requireUser, async (req, res, next) => {
     const user = currentUser(req);
     const rows = await supabase
       .from("ad_banner_bookings")
-      .select(publicAdColumns + ", tx_signature, price_usdc")
+      .select(publicAdColumns + ", tx_signature, created_at, price_usdc")
       .eq("user_id", user.id)
       .order("created_at", { ascending: false });
     if (rows.error) throwDb(rows.error, "load my ads");
