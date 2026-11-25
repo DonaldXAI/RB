@@ -27,7 +27,16 @@ const EnvSchema = z.object({
   TELEGRAM_BOT_TOKEN: z.string().min(1),
   TELEGRAM_CHANNEL_ID: z.string().min(1),
   ADMIN_TELEGRAM_CHAT_ID: z.string().min(1).optional(),
+  /** Comma-separated https origins (e.g. Lovable preview URLs). */
+  CORS_EXTRA_ORIGINS: z.string().optional().default(""),
 });
+
+function parseCorsExtraOrigins(raw: string): string[] {
+  return raw
+    .split(",")
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+}
 
 function publicAddress(value: string, name: string): string {
   const trimmed = value.trim();
@@ -55,8 +64,17 @@ function loadConfig() {
   if (usdcMint !== MAINNET_USDC_MINT) {
     throw new Error(`USDC_MINT_ADDRESS must be mainnet USDC (${MAINNET_USDC_MINT})`);
   }
+  const corsExtraOrigins: string[] = [];
+  for (const origin of parseCorsExtraOrigins(data.CORS_EXTRA_ORIGINS ?? "")) {
+    if (!origin.startsWith("https://")) {
+      throw new Error(`CORS_EXTRA_ORIGINS entries must use https:// (${origin})`);
+    }
+    corsExtraOrigins.push(origin);
+  }
+
   return {
     ...data,
+    corsExtraOrigins,
     ESCROW_WALLET_ADDRESS: publicAddress(data.ESCROW_WALLET_ADDRESS, "ESCROW_WALLET_ADDRESS"),
     REVENUE_WALLET_ADDRESS: publicAddress(data.REVENUE_WALLET_ADDRESS, "REVENUE_WALLET_ADDRESS"),
     USDC_MINT_ADDRESS: MAINNET_USDC_MINT,

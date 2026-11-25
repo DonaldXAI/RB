@@ -28,7 +28,7 @@ const PRODUCTION_ORIGINS = [
   "https://raidhive.lovable.app",
 ] as const;
 
-const allowedOrigins = new Set<string>([...PRODUCTION_ORIGINS, config.FRONTEND_ORIGIN]);
+const allowedOrigins = new Set<string>([...PRODUCTION_ORIGINS, config.FRONTEND_ORIGIN, ...config.corsExtraOrigins]);
 
 const app = express();
 app.disable("x-powered-by");
