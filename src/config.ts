@@ -69,6 +69,8 @@ export const config = loadConfig();
 export const GAS_FEE_USDC = 0.15;
 export const MIN_PAYOUT_USDC = 2;
 export const AD_PRICE_USDC = 100;
+/** Home banner: 1 live slot + 5 queued slots (Lovable expects a fixed-size list). */
+export const AD_BANNER_SLOT_COUNT = 6;
 export const VESTING_HOURS = 12;
 export const REFERRAL_DEPOSIT_RATE = 0.02;
 export const REFERRAL_VEST_BONUS_USDC = 0.05;

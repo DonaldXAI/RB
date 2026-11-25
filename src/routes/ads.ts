@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { AD_PRICE_USDC, config, HttpError, parseBody, parseParams, supabase, throwDb } from "../config.js";
+import { AD_BANNER_SLOT_COUNT, AD_PRICE_USDC, config, HttpError, parseBody, parseParams, supabase, throwDb } from "../config.js";
 import { currentUser, requireUser } from "../middleware/auth.js";
 import { adsActionLimiter, adsBookLimiter } from "../middleware/rateLimits.js";
 import { verifyUsdcTransfer } from "../services/helius.js";
@@ -19,6 +19,19 @@ const bookingId = z.string().uuid();
 const publicAdColumns =
   "id, user_id, headline, image_url, target_url, status, starts_at, ends_at, impressions, clicks, expires_at";
 
+const QUEUE_SLOT_COUNT = AD_BANNER_SLOT_COUNT - 1;
+
+type AdRow = Record<string, unknown>;
+
+function padBannerSlots(active: AdRow | null, queue: AdRow[]): (AdRow | null)[] {
+  const slots: (AdRow | null)[] = new Array<AdRow | null>(AD_BANNER_SLOT_COUNT).fill(null);
+  slots[0] = active;
+  for (let i = 0; i < QUEUE_SLOT_COUNT; i += 1) {
+    slots[i + 1] = queue[i] ?? null;
+  }
+  return slots;
+}
+
 router.get("/slots", async (_req, res, next) => {
   try {
     const active = await supabase
@@ -35,14 +48,20 @@ router.get("/slots", async (_req, res, next) => {
       .select(publicAdColumns)
       .eq("status", "queued")
       .order("starts_at", { ascending: true })
-      .limit(5);
+      .limit(QUEUE_SLOT_COUNT);
     if (queued.error) throwDb(queued.error, "load queued ads");
+
+    const queue = (queued.data ?? []) as AdRow[];
+    const slots = padBannerSlots((active.data as AdRow | null) ?? null, queue);
 
     res.json({
       ok: true,
+      slotCount: AD_BANNER_SLOT_COUNT,
+      priceUsdc: AD_PRICE_USDC,
       active: active.data,
-      queue: queued.data ?? [],
-      slots: active.data ? [active.data, ...(queued.data ?? [])] : (queued.data ?? []),
+      queue,
+      slots,
+      filledCount: slots.filter(Boolean).length,
     });
   } catch (error) {
     next(error);

@@ -24,7 +24,51 @@ const TemplateId = z.string().uuid();
 const txSignature = z.string().trim().regex(/^[1-9A-HJ-NP-Za-km-z]{64,128}$/);
 
 const templateName = z.string().trim().min(1).max(60);
-const templateDraft = z.record(z.unknown());
+
+function normalizeTemplateDraft(value: unknown): Record<string, unknown> {
+  if (value == null) return {};
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      throw new HttpError(400, "Invalid request");
+    }
+    throw new HttpError(400, "Invalid request");
+  }
+  if (typeof value === "object" && !Array.isArray(value)) return value as Record<string, unknown>;
+  throw new HttpError(400, "Invalid request");
+}
+
+const templateSaveInput = z.object({
+  name: z.string().optional(),
+  templateName: z.string().optional(),
+  draft: z.unknown().optional(),
+  fields: z.unknown().optional(),
+});
+
+function parseTemplateSave(body: unknown): { name: string; draft: Record<string, unknown> } {
+  const raw = parseBody(templateSaveInput, body);
+  const name = (raw.name ?? raw.templateName ?? "").trim();
+  templateName.parse(name);
+  return { name, draft: normalizeTemplateDraft(raw.draft ?? raw.fields ?? {}) };
+}
+
+function parseTemplateDeleteId(body: unknown): string {
+  const raw = parseBody(
+    z.object({
+      template_id: TemplateId.optional(),
+      id: TemplateId.optional(),
+      templateId: TemplateId.optional(),
+    }),
+    body,
+  );
+  const templateId = raw.template_id ?? raw.id ?? raw.templateId;
+  if (!templateId) throw new HttpError(400, "Invalid request");
+  return templateId;
+}
 const DraftId = z.string().uuid();
 const campaignDraft = z.record(z.unknown());
 const extraHours = z.union([z.literal(24), z.literal(48), z.literal(72)]);
@@ -47,13 +91,7 @@ router.get("/templates", async (req, res, next) => {
 router.post("/templates", async (req, res, next) => {
   try {
     const user = currentUser(req);
-    const body = parseBody(
-      z.object({
-        name: templateName,
-        draft: templateDraft,
-      }),
-      req.body,
-    );
+    const body = parseTemplateSave(req.body);
     const saved = await supabase
       .from("campaign_templates")
       .insert({
@@ -62,10 +100,10 @@ router.post("/templates", async (req, res, next) => {
         draft: body.draft,
         updated_at: new Date().toISOString(),
       })
-      .select("id")
+      .select("id, name, draft")
       .single();
     if (saved.error) throwDb(saved.error, "save campaign template");
-    res.json({ ok: true });
+    res.status(201).json({ ok: true, template: saved.data });
   } catch (error) {
     next(error);
   }
@@ -74,16 +112,11 @@ router.post("/templates", async (req, res, next) => {
 router.post("/templates/delete", async (req, res, next) => {
   try {
     const user = currentUser(req);
-    const body = parseBody(
-      z.object({
-        template_id: TemplateId,
-      }),
-      req.body,
-    );
+    const templateId = parseTemplateDeleteId(req.body);
     const removed = await supabase
       .from("campaign_templates")
       .delete()
-      .eq("id", body.template_id)
+      .eq("id", templateId)
       .eq("user_id", user.id)
       .select("id")
       .maybeSingle();
