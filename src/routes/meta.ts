@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { CORS_ALLOWED_HEADERS, listAllowedOrigins } from "../corsPolicy.js";
 
 const router = Router();
 
@@ -8,15 +9,8 @@ router.get("/", (_req, res) => {
     ok: true,
     service: "raidhive-backend",
     cors: {
-      allowedHeaders: [
-        "Content-Type",
-        "Authorization",
-        "x-admin-wallet",
-        "x-admin-message",
-        "x-admin-signature",
-        "x-admin-nonce",
-        "x-admin-timestamp",
-      ],
+      allowedOrigins: listAllowedOrigins(),
+      allowedHeaders: [...CORS_ALLOWED_HEADERS],
     },
     routes: [
       "GET /health",

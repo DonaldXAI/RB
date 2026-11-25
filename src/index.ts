@@ -3,6 +3,7 @@ import express, { type NextFunction, type Request, type Response } from "express
 import rateLimit from "express-rate-limit";
 import helmet from "helmet";
 import cron from "node-cron";
+import { allowedOriginsSet, CORS_ALLOWED_HEADERS } from "./corsPolicy.js";
 import { config, HttpError, REFERRAL_VEST_BONUS_USDC, supabase } from "./config.js";
 import adminRouter from "./routes/admin.js";
 import adsRouter from "./routes/ads.js";
@@ -22,24 +23,7 @@ import { requireUser } from "./middleware/auth.js";
 import { raidsSubmitLimiter } from "./middleware/rateLimits.js";
 import { readEscrowUsdcBalance, readOwedObligationsUsdc } from "./services/escrow.js";
 
-const PRODUCTION_ORIGINS = [
-  "https://raidhive.xyz",
-  "https://www.raidhive.xyz",
-  "https://raidhive.lovable.app",
-] as const;
-
-const allowedOrigins = new Set<string>([...PRODUCTION_ORIGINS, config.FRONTEND_ORIGIN, ...config.corsExtraOrigins]);
-
-/** Browsers preflight these on cross-origin admin + authenticated API calls. */
-const corsAllowedHeaders = [
-  "Content-Type",
-  "Authorization",
-  "x-admin-wallet",
-  "x-admin-message",
-  "x-admin-signature",
-  "x-admin-nonce",
-  "x-admin-timestamp",
-] as const;
+const allowedOrigins = allowedOriginsSet();
 
 const app = express();
 app.disable("x-powered-by");
@@ -53,7 +37,7 @@ app.use(
       callback(new Error("Origin is not allowed"));
     },
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: [...corsAllowedHeaders],
+    allowedHeaders: [...CORS_ALLOWED_HEADERS],
     exposedHeaders: ["Content-Type"],
   }),
 );
