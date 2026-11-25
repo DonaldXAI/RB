@@ -7,9 +7,14 @@ import { config, HttpError, REFERRAL_VEST_BONUS_USDC, supabase } from "./config.
 import adminRouter from "./routes/admin.js";
 import adsRouter from "./routes/ads.js";
 import campaignsRouter from "./routes/campaigns.js";
+import foundersRouter from "./routes/founders.js";
+import notificationsRouter from "./routes/notifications.js";
 import payoutsRouter from "./routes/payouts.js";
+import { raidVerifyHandler } from "./routes/raids.js";
 import raidsRouter from "./routes/raids.js";
 import socialRouter from "./routes/social.js";
+import { requireUser } from "./middleware/auth.js";
+import { raidsSubmitLimiter } from "./middleware/rateLimits.js";
 import { readEscrowUsdcBalance, readOwedObligationsUsdc } from "./services/escrow.js";
 
 const PRODUCTION_ORIGINS = [
@@ -49,7 +54,10 @@ app.get("/health", (_req, res) => {
 });
 
 app.use("/api/campaigns", campaignsRouter);
+app.post("/api/verify", requireUser, raidsSubmitLimiter, raidVerifyHandler);
 app.use("/api/raids", raidsRouter);
+app.use("/api/founders", foundersRouter);
+app.use("/api/notifications", notificationsRouter);
 app.use("/api/social", socialRouter);
 app.use("/api/payouts", payoutsRouter);
 app.use("/api/ads", adsRouter);

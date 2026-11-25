@@ -7,6 +7,7 @@ import {
   GAS_FEE_USDC,
   HttpError,
   parseBody,
+  parseParams,
   recalculateCampaignDepositFees,
   REFERRAL_DEPOSIT_RATE,
   supabase,
@@ -20,6 +21,27 @@ router.use(requireUser);
 
 const CampaignId = z.string().uuid();
 const txSignature = z.string().trim().regex(/^[1-9A-HJ-NP-Za-km-z]{64,128}$/);
+
+router.get("/:campaignId/submissions", async (req, res, next) => {
+  try {
+    const user = currentUser(req);
+    const campaignId = parseParams(CampaignId, req.params.campaignId);
+    const campaign = await ownedCampaign(user.id, campaignId);
+
+    const rows = await supabase
+      .from("submissions")
+      .select(
+        "id, raider_id, action_type, tweet_url, tweet_text, status, earned_usdc, vests_at, vested, ai_reason, created_at, flagged_by_creator, flag_reason",
+      )
+      .eq("campaign_id", campaign.id)
+      .order("created_at", { ascending: false });
+    if (rows.error) throwDb(rows.error, "load submissions");
+
+    res.json({ ok: true, campaignId: campaign.id, submissions: rows.data ?? [] });
+  } catch (error) {
+    next(error);
+  }
+});
 
 type Campaign = {
   id: string;

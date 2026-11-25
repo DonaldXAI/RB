@@ -1,3 +1,4 @@
+import type { NextFunction, Request, Response } from "express";
 import { Router } from "express";
 import { z } from "zod";
 import {
@@ -40,10 +41,11 @@ type Campaign = {
   target_username: string | null;
 };
 
-router.post("/submit", raidsSubmitLimiter, async (req, res, next) => {
+export async function raidVerifyHandler(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const user = currentUser(req);
     await touchProfileIp(user.id, req);
+    const replaceRejected = req.originalUrl.includes("/resubmit");
     const body = parseBody(
       z.object({
         campaignId: z.string().uuid(),
@@ -68,12 +70,25 @@ router.post("/submit", raidsSubmitLimiter, async (req, res, next) => {
 
     const existing = await supabase
       .from("submissions")
-      .select("id")
+      .select("id, status")
       .eq("campaign_id", body.campaignId)
       .eq("raider_id", user.id)
       .maybeSingle();
     if (existing.error) throwDb(existing.error, "check submission");
-    if (existing.data) throw new HttpError(409, "You already submitted a raid for this campaign");
+    if (existing.data) {
+      const priorStatus = existing.data.status as string;
+      if (replaceRejected && priorStatus === "rejected") {
+        const removed = await supabase
+          .from("submissions")
+          .delete()
+          .eq("id", existing.data.id)
+          .eq("raider_id", user.id)
+          .eq("status", "rejected");
+        if (removed.error) throwDb(removed.error, "clear rejected submission");
+      } else {
+        throw new HttpError(409, "You already submitted a raid for this campaign");
+      }
+    }
 
     const campaignResult = await supabase.from("campaigns").select("*").eq("id", body.campaignId).maybeSingle();
     if (campaignResult.error) throwDb(campaignResult.error, "load campaign");
@@ -159,7 +174,10 @@ router.post("/submit", raidsSubmitLimiter, async (req, res, next) => {
   } catch (error) {
     next(error);
   }
-});
+}
+
+router.post("/submit", raidsSubmitLimiter, raidVerifyHandler);
+router.post("/resubmit", raidsSubmitLimiter, raidVerifyHandler);
 
 function minActionRate(rates: Record<string, number>): number {
   const positives = RAID_ACTIONS.map((action) => Number(rates[action])).filter((rate) => Number.isFinite(rate) && rate > 0);

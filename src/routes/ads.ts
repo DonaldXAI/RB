@@ -16,6 +16,92 @@ const httpsUrl = z
 const txSignature = z.string().trim().regex(/^[1-9A-HJ-NP-Za-km-z]{64,128}$/);
 const bookingId = z.string().uuid();
 
+const publicAdColumns =
+  "id, user_id, headline, image_url, target_url, status, starts_at, ends_at, impressions, clicks, expires_at";
+
+router.get("/slots", async (_req, res, next) => {
+  try {
+    const active = await supabase
+      .from("ad_banner_bookings")
+      .select(publicAdColumns)
+      .eq("status", "active")
+      .order("starts_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (active.error) throwDb(active.error, "load active ad");
+
+    const queued = await supabase
+      .from("ad_banner_bookings")
+      .select(publicAdColumns)
+      .eq("status", "queued")
+      .order("starts_at", { ascending: true })
+      .limit(5);
+    if (queued.error) throwDb(queued.error, "load queued ads");
+
+    res.json({
+      ok: true,
+      active: active.data,
+      queue: queued.data ?? [],
+      slots: active.data ? [active.data, ...(queued.data ?? [])] : (queued.data ?? []),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/my-ads", requireUser, async (req, res, next) => {
+  try {
+    const user = currentUser(req);
+    const rows = await supabase
+      .from("ad_banner_bookings")
+      .select(publicAdColumns + ", tx_signature, price_usdc")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false });
+    if (rows.error) throwDb(rows.error, "load my ads");
+    res.json({ ok: true, ads: rows.data ?? [] });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/reservations/current", requireUser, async (req, res, next) => {
+  try {
+    const user = currentUser(req);
+    const row = await supabase
+      .from("ad_banner_bookings")
+      .select(publicAdColumns)
+      .eq("user_id", user.id)
+      .eq("status", "reserved")
+      .order("expires_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (row.error) throwDb(row.error, "load ad reservation");
+    res.json({ ok: true, reservation: row.data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete("/reservations/:id", requireUser, async (req, res, next) => {
+  try {
+    const user = currentUser(req);
+    const id = parseParams(bookingId, req.params.id);
+    const updated = await supabase
+      .from("ad_banner_bookings")
+      .update({ status: "expired" })
+      .eq("id", id)
+      .eq("user_id", user.id)
+      .eq("status", "reserved")
+      .select("id, status")
+      .maybeSingle();
+    if (updated.error) throwDb(updated.error, "cancel ad reservation");
+    if (!updated.data) throw new HttpError(404, "Ad reservation not found");
+    res.json({ ok: true, reservation: updated.data });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.post("/reserve", requireUser, adsBookLimiter, async (req, res, next) => {
   try {
     const user = currentUser(req);
