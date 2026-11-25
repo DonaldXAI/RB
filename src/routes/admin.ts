@@ -8,6 +8,101 @@ import { verifyBatchPayoutTx } from "../services/helius.js";
 const router = Router();
 router.use(requireAdmin);
 
+const listLimit = z.coerce.number().int().min(1).max(100).default(50);
+
+router.get("/payouts", async (req, res, next) => {
+  try {
+    const query = parseBody(
+      z.object({
+        status: z.enum(["queued", "paid", "rejected"]).default("queued"),
+        limit: listLimit,
+      }),
+      { status: req.query.status ?? "queued", limit: Number(req.query.limit ?? 50) },
+    );
+    const rows = await supabase
+      .from("payout_requests")
+      .select(
+        "id, user_id, campaign_id, request_type, gross_amount_usdc, net_amount_usdc, gas_fee_usdc, destination_wallet, status, payout_tx_hash, created_at",
+      )
+      .eq("status", query.status)
+      .order("created_at", { ascending: false })
+      .limit(query.limit ?? 50);
+    if (rows.error) throwDb(rows.error, "list payout requests");
+    res.json({ ok: true, payouts: rows.data ?? [] });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/submissions", async (req, res, next) => {
+  try {
+    const query = parseBody(
+      z.object({ limit: listLimit }),
+      { limit: Number(req.query.limit ?? 50) },
+    );
+    const rows = await supabase
+      .from("submissions")
+      .select(
+        "id, campaign_id, raider_id, action_type, tweet_url, status, earned_usdc, ai_reason, flagged_by_creator, flag_reason, created_at",
+      )
+      .order("created_at", { ascending: false })
+      .limit(query.limit ?? 50);
+    if (rows.error) throwDb(rows.error, "list submissions");
+    res.json({ ok: true, submissions: rows.data ?? [] });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/users", async (req, res, next) => {
+  try {
+    const query = parseBody(
+      z.object({
+        q: z.string().trim().max(64).optional(),
+        limit: listLimit,
+      }),
+      { q: req.query.q, limit: Number(req.query.limit ?? 50) },
+    );
+    let request = supabase
+      .from("profiles")
+      .select("id, x_username, wallet_address, strikes, is_banned, x_followers, available_usdc, created_at")
+      .order("created_at", { ascending: false })
+      .limit(query.limit ?? 50);
+    if (query.q) {
+      const term = query.q.replace(/[%(),]/g, "");
+      if (term) request = request.or(`x_username.ilike.%${term}%,wallet_address.ilike.%${term}%`);
+    }
+    const rows = await request;
+    if (rows.error) throwDb(rows.error, "list users");
+    res.json({ ok: true, users: rows.data ?? [] });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/campaigns", async (req, res, next) => {
+  try {
+    const query = parseBody(
+      z.object({
+        status: z.string().trim().max(32).optional(),
+        limit: listLimit,
+      }),
+      { status: req.query.status, limit: Number(req.query.limit ?? 50) },
+    );
+    let request = supabase
+      .from("campaigns")
+      .select("id, founder_id, status, project_name, total_budget_usdc, remaining_budget_usdc, ends_at, created_at")
+      .order("created_at", { ascending: false })
+      .limit(query.limit ?? 50);
+    if (query.status) request = request.eq("status", query.status);
+    const rows = await request;
+    if (rows.error) throwDb(rows.error, "list campaigns");
+    res.json({ ok: true, campaigns: rows.data ?? [] });
+  } catch (error) {
+    next(error);
+  }
+});
+
 type PayoutRequest = {
   id: string;
   status: string;

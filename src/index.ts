@@ -10,6 +10,7 @@ import clickLinksRouter from "./routes/clickLinks.js";
 import eligibilityRouter from "./routes/eligibility.js";
 import campaignsRouter from "./routes/campaigns.js";
 import foundersRouter from "./routes/founders.js";
+import projectsRouter from "./routes/projects.js";
 import reputationRouter from "./routes/reputation.js";
 import notificationsRouter from "./routes/notifications.js";
 import payoutsRouter from "./routes/payouts.js";
@@ -69,6 +70,7 @@ app.use("/api/social", socialRouter);
 app.use("/api/payouts", payoutsRouter);
 app.use("/api/ads", adsRouter);
 app.use("/api/reputation", reputationRouter);
+app.use("/api/projects", projectsRouter);
 app.use("/api/click-links", clickLinksRouter);
 app.use("/api/admin", adminRouter);
 

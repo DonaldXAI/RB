@@ -123,6 +123,26 @@ router.post("/reserve", requireUser, adsBookLimiter, async (req, res, next) => {
   }
 });
 
+router.post("/clicks", adsActionLimiter, async (req, res, next) => {
+  try {
+    const body = parseBody(
+      z
+        .object({
+          id: bookingId.optional(),
+          bookingId: bookingId.optional(),
+        })
+        .refine((value) => Boolean(value.id ?? value.bookingId), { message: "id is required" }),
+      req.body,
+    );
+    const id = (body.bookingId ?? body.id)!;
+    const bumped = await supabase.rpc("bump_ad_stat", { p_id: id, p_field: "clicks" });
+    if (bumped.error) throwDb(bumped.error, "count click");
+    res.json({ ok: true, clicks: bumped.data });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.post("/book", requireUser, adsBookLimiter, async (req, res, next) => {
   try {
     const user = currentUser(req);

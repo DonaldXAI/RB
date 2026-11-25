@@ -176,6 +176,71 @@ export async function raidVerifyHandler(req: Request, res: Response, next: NextF
   }
 }
 
+const publicCampaignColumns =
+  "id, status, project_name, brief, ticker_or_hashtag, target_username, target_tweet_id, min_followers, base_rates, remaining_budget_usdc, ends_at, created_at";
+
+router.get("/saved", async (req, res, next) => {
+  try {
+    const user = currentUser(req);
+    const rows = await supabase
+      .from("saved_campaigns")
+      .select(`campaign_id, created_at, campaigns (${publicCampaignColumns})`)
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false });
+    if (rows.error) throwDb(rows.error, "load saved raids");
+    const saved = (rows.data ?? []).map((row) => ({
+      campaignId: row.campaign_id,
+      savedAt: row.created_at,
+      campaign: row.campaigns,
+    }));
+    res.json({ ok: true, saved });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/saved", async (req, res, next) => {
+  try {
+    const user = currentUser(req);
+    const body = parseBody(z.object({ campaignId: z.string().uuid() }), req.body);
+    const campaign = await supabase.from("campaigns").select("id, status").eq("id", body.campaignId).maybeSingle();
+    if (campaign.error) throwDb(campaign.error, "load campaign");
+    if (!campaign.data) throw new HttpError(404, "Campaign not found");
+    if (!["active", "paused"].includes(campaign.data.status as string)) {
+      throw new HttpError(409, "Only active raids can be saved");
+    }
+
+    const saved = await supabase
+      .from("saved_campaigns")
+      .upsert({ user_id: user.id, campaign_id: body.campaignId }, { onConflict: "user_id,campaign_id", ignoreDuplicates: false })
+      .select("campaign_id, created_at")
+      .maybeSingle();
+    if (saved.error) throwDb(saved.error, "save raid");
+    res.json({ ok: true, campaignId: body.campaignId, savedAt: saved.data?.created_at ?? new Date().toISOString() });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/saved/delete", async (req, res, next) => {
+  try {
+    const user = currentUser(req);
+    const body = parseBody(z.object({ campaignId: z.string().uuid() }), req.body);
+    const removed = await supabase
+      .from("saved_campaigns")
+      .delete()
+      .eq("user_id", user.id)
+      .eq("campaign_id", body.campaignId)
+      .select("campaign_id")
+      .maybeSingle();
+    if (removed.error) throwDb(removed.error, "unsave raid");
+    if (!removed.data) throw new HttpError(404, "Saved raid not found");
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.post("/submit", raidsSubmitLimiter, raidVerifyHandler);
 router.post("/resubmit", raidsSubmitLimiter, raidVerifyHandler);
 
