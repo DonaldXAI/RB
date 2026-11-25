@@ -12,7 +12,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const MIN_ACCOUNT_AGE_DAYS = 90;
 const MIN_FOLLOWERS_DEFAULT = 150;
 const MIN_FOLLOWERS_BADGE = 100;
-const MIN_PUBLIC_POSTS = 12;
+const MIN_PUBLIC_POSTS = 20;
 const BADGE_FOLLOWER_TYPES = new Set(["gold", "blue", "grey"]);
 
 export type EligibilityChecklistItem = {
