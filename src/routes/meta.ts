@@ -30,6 +30,11 @@ router.get("/", (_req, res) => {
       "POST /api/campaigns/verify-deposit",
       "POST /api/social/verify-x",
       "POST /api/payouts/request",
+      "GET /api/reputation/me",
+      "GET /api/reputation/:profileId",
+      "GET /api/click-links/:id",
+      "POST /api/click-links/:id",
+      "GET /api/ads/:id/click",
     ],
   });
 });

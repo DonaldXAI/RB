@@ -164,6 +164,24 @@ router.post("/book", requireUser, adsBookLimiter, async (req, res, next) => {
   }
 });
 
+router.get("/:id/click", adsActionLimiter, async (req, res, next) => {
+  try {
+    const id = parseParams(bookingId, req.params.id);
+    const row = await supabase
+      .from("ad_banner_bookings")
+      .select("id, target_url, status")
+      .eq("id", id)
+      .maybeSingle();
+    if (row.error) throwDb(row.error, "load ad");
+    if (!row.data?.target_url) throw new HttpError(404, "Ad not found");
+    const bumped = await supabase.rpc("bump_ad_stat", { p_id: id, p_field: "clicks" });
+    if (bumped.error) throwDb(bumped.error, "count click");
+    res.json({ ok: true, url: row.data.target_url, targetUrl: row.data.target_url, clicks: bumped.data });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.post("/:id/impression", adsActionLimiter, async (req, res, next) => {
   try {
     const id = parseParams(bookingId, req.params.id);

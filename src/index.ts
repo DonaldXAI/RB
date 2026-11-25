@@ -6,8 +6,10 @@ import cron from "node-cron";
 import { config, HttpError, REFERRAL_VEST_BONUS_USDC, supabase } from "./config.js";
 import adminRouter from "./routes/admin.js";
 import adsRouter from "./routes/ads.js";
+import clickLinksRouter from "./routes/clickLinks.js";
 import campaignsRouter from "./routes/campaigns.js";
 import foundersRouter from "./routes/founders.js";
+import reputationRouter from "./routes/reputation.js";
 import notificationsRouter from "./routes/notifications.js";
 import payoutsRouter from "./routes/payouts.js";
 import { raidVerifyHandler } from "./routes/raids.js";
@@ -64,6 +66,8 @@ app.use("/api/notifications", notificationsRouter);
 app.use("/api/social", socialRouter);
 app.use("/api/payouts", payoutsRouter);
 app.use("/api/ads", adsRouter);
+app.use("/api/reputation", reputationRouter);
+app.use("/api/click-links", clickLinksRouter);
 app.use("/api/admin", adminRouter);
 
 app.use((_req, res) => {
