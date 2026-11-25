@@ -16,6 +16,7 @@ router.get("/", (_req, res) => {
       "DELETE /api/ads/reservations/:id",
       "POST /api/ads/reserve",
       "POST /api/ads/book",
+      "POST /api/eligibility/verify",
       "POST /api/verify",
       "POST /verify",
       "POST /api/raids/submit",

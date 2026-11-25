@@ -7,6 +7,7 @@ import { config, HttpError, REFERRAL_VEST_BONUS_USDC, supabase } from "./config.
 import adminRouter from "./routes/admin.js";
 import adsRouter from "./routes/ads.js";
 import clickLinksRouter from "./routes/clickLinks.js";
+import eligibilityRouter from "./routes/eligibility.js";
 import campaignsRouter from "./routes/campaigns.js";
 import foundersRouter from "./routes/founders.js";
 import reputationRouter from "./routes/reputation.js";
@@ -61,6 +62,7 @@ app.use("/api/campaigns", campaignsRouter);
 app.post("/api/verify", requireUser, raidsSubmitLimiter, raidVerifyHandler);
 app.post("/verify", requireUser, raidsSubmitLimiter, raidVerifyHandler);
 app.use("/api/raids", raidsRouter);
+app.use("/api/eligibility", eligibilityRouter);
 app.use("/api/founders", foundersRouter);
 app.use("/api/notifications", notificationsRouter);
 app.use("/api/social", socialRouter);
