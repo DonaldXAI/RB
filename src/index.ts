@@ -172,11 +172,27 @@ async function expireCampaigns(): Promise<number> {
   return expired.data?.length ?? 0;
 }
 
+const SOLVENCY_TELEGRAM_COOLDOWN_MS = 60 * 60 * 1000;
+let lastSolvencyTelegramAt = 0;
+
 async function checkEscrowSolvency(): Promise<void> {
-  if (!config.ADMIN_TELEGRAM_CHAT_ID) return;
   try {
     const [balance, owed] = await Promise.all([readEscrowUsdcBalance(), readOwedObligationsUsdc()]);
     if (balance + 0.000001 >= owed) return;
+
+    console.error(
+      `[solvency] UNDERFUNDED on-chain=${balance.toFixed(6)} USDC obligations=${owed.toFixed(6)} USDC escrow=${config.ESCROW_WALLET_ADDRESS}`,
+    );
+
+    if (!config.ADMIN_TELEGRAM_CHAT_ID) {
+      console.error("[solvency] Set ADMIN_TELEGRAM_CHAT_ID on Render for Telegram alerts");
+      return;
+    }
+
+    const now = Date.now();
+    if (now - lastSolvencyTelegramAt < SOLVENCY_TELEGRAM_COOLDOWN_MS) return;
+    lastSolvencyTelegramAt = now;
+
     const text = [
       "URGENT: RaidHive escrow is underfunded.",
       `On-chain balance: ${balance.toFixed(2)} USDC`,

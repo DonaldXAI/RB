@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { asUsdc, HttpError, parseBody, parseParams, supabase, throwDb, VESTING_HOURS } from "../config.js";
-import { logAdminAction } from "../middleware/audit.js";
+import { logAdminAction, logAdminActionOrThrow } from "../middleware/audit.js";
 import { requireAdmin } from "../middleware/adminAuth.js";
 import { verifyBatchPayoutTx } from "../services/helius.js";
 
@@ -29,6 +29,11 @@ router.get("/payouts", async (req, res, next) => {
       .order("created_at", { ascending: false })
       .limit(query.limit ?? 50);
     if (rows.error) throwDb(rows.error, "list payout requests");
+    await logAdminAction(req, "payouts.list", "payout_request", "list", {
+      status: query.status,
+      limit: query.limit,
+      count: rows.data?.length ?? 0,
+    });
     res.json({ ok: true, payouts: rows.data ?? [] });
   } catch (error) {
     next(error);
@@ -49,6 +54,10 @@ router.get("/submissions", async (req, res, next) => {
       .order("created_at", { ascending: false })
       .limit(query.limit ?? 50);
     if (rows.error) throwDb(rows.error, "list submissions");
+    await logAdminAction(req, "submissions.list", "submission", "list", {
+      limit: query.limit,
+      count: rows.data?.length ?? 0,
+    });
     res.json({ ok: true, submissions: rows.data ?? [] });
   } catch (error) {
     next(error);
@@ -75,6 +84,11 @@ router.get("/users", async (req, res, next) => {
     }
     const rows = await request;
     if (rows.error) throwDb(rows.error, "list users");
+    await logAdminAction(req, "users.list", "profile", "list", {
+      q: query.q ?? null,
+      limit: query.limit,
+      count: rows.data?.length ?? 0,
+    });
     res.json({ ok: true, users: rows.data ?? [] });
   } catch (error) {
     next(error);
@@ -98,6 +112,11 @@ router.get("/campaigns", async (req, res, next) => {
     if (query.status) request = request.eq("status", query.status);
     const rows = await request;
     if (rows.error) throwDb(rows.error, "list campaigns");
+    await logAdminAction(req, "campaigns.list", "campaign", "list", {
+      status: query.status ?? null,
+      limit: query.limit,
+      count: rows.data?.length ?? 0,
+    });
     res.json({ ok: true, campaigns: rows.data ?? [] });
   } catch (error) {
     next(error);
@@ -156,7 +175,7 @@ router.post("/payouts/confirm", async (req, res, next) => {
     });
     if (confirmed.error) throwDb(confirmed.error, "confirm payouts");
 
-    await logAdminAction(req, "payouts.confirm", "payout_request", requestIds.join(","), {
+    await logAdminActionOrThrow(req, "payouts.confirm", "payout_request", requestIds.join(","), {
       payoutTxHash: body.payoutTxHash,
       count: confirmed.data,
     });
@@ -185,7 +204,7 @@ router.post("/payouts/reject", async (req, res, next) => {
     });
     if (rejected.error) throwDb(rejected.error, "reject payout");
 
-    await logAdminAction(req, "payouts.reject", "payout_request", body.requestId, {
+    await logAdminActionOrThrow(req, "payouts.reject", "payout_request", body.requestId, {
       refundBalance: body.refundBalance,
       rejectionReason: body.rejectionReason,
     });
@@ -235,7 +254,7 @@ router.post("/submissions/override", async (req, res, next) => {
     });
     if (updated.error) throwDb(updated.error, "override submission");
 
-    await logAdminAction(req, "submissions.override", "submission", body.submissionId, {
+    await logAdminActionOrThrow(req, "submissions.override", "submission", body.submissionId, {
       decision: body.decision,
       reason: body.reason,
     });
@@ -261,7 +280,7 @@ router.post("/users/moderate", async (req, res, next) => {
     });
     if (moderated.error) throwDb(moderated.error, "moderate user");
 
-    await logAdminAction(req, "users.moderate", "profile", body.userId, { action: body.action });
+    await logAdminActionOrThrow(req, "users.moderate", "profile", body.userId, { action: body.action });
 
     res.json({ ok: true, profile: moderated.data });
   } catch (error) {
@@ -287,7 +306,7 @@ router.post("/campaigns/status", async (req, res, next) => {
     if (error) throwDb(error, "set campaign status");
     if (!data) throw new HttpError(404, "Campaign not found");
 
-    await logAdminAction(req, "campaigns.status", "campaign", body.campaignId, { status: body.status });
+    await logAdminActionOrThrow(req, "campaigns.status", "campaign", body.campaignId, { status: body.status });
 
     res.json({ ok: true, campaign: data });
   } catch (error) {
@@ -352,7 +371,7 @@ router.post("/ads/:id/takedown", async (req, res, next) => {
       }
     }
 
-    await logAdminAction(req, "ads.takedown", "ad_banner", id, { previousStatus: existing.data.status, promoted: promoted?.id ?? null });
+    await logAdminActionOrThrow(req, "ads.takedown", "ad_banner", id, { previousStatus: existing.data.status, promoted: promoted?.id ?? null });
 
     res.json({ ok: true, refunded: refunded.data, promoted });
   } catch (error) {

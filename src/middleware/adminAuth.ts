@@ -3,6 +3,7 @@ import { PublicKey } from "@solana/web3.js";
 import bs58 from "bs58";
 import nacl from "tweetnacl";
 import { assertWalletAddress, config, HttpError, supabase } from "../config.js";
+import { logAdminAuthFailure } from "./audit.js";
 
 const ADMIN_SIGNATURE_TTL_MS = 3 * 60 * 1000;
 
@@ -87,6 +88,9 @@ export async function requireAdmin(req: Request, _res: Response, next: NextFunct
     req.adminWallet = wallet;
     next();
   } catch (error) {
+    const reason = error instanceof HttpError ? error.message : "Admin authentication failed";
+    const walletHint = req.get("x-admin-wallet") ?? undefined;
+    void logAdminAuthFailure(req, reason, walletHint);
     next(error);
   }
 }

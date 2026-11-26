@@ -1,10 +1,12 @@
 import { Router } from "express";
+import { routeManifestForResponse } from "../apiManifest.js";
 import { CORS_ALLOWED_HEADERS, listAllowedOrigins } from "../corsPolicy.js";
 
 const router = Router();
 
 /** Lets the frontend confirm deployed API routes (e.g. after Railway deploy). */
 router.get("/", (_req, res) => {
+  const manifest = routeManifestForResponse();
   res.json({
     ok: true,
     service: "raidhive-backend",
@@ -12,65 +14,8 @@ router.get("/", (_req, res) => {
       allowedOrigins: listAllowedOrigins(),
       allowedHeaders: [...CORS_ALLOWED_HEADERS],
     },
-    routes: [
-      "GET /health",
-      "GET /api",
-      "GET /api/ads/slots",
-      "GET /api/ads/my-ads",
-      "GET /api/ads/reservations/current",
-      "DELETE /api/ads/reservations/:id",
-      "POST /api/ads/reserve",
-      "POST /api/ads/book",
-      "POST /api/ads/clicks",
-      "GET /api/eligibility/status",
-      "POST /api/eligibility/verify",
-      "POST /api/verify",
-      "POST /verify",
-      "POST /api/raids/submit",
-      "POST /api/raids/resubmit",
-      "GET /api/raids/saved",
-      "POST /api/raids/saved",
-      "POST /api/raids/saved/delete",
-      "GET /api/founders/performance",
-      "GET /api/notifications",
-      "GET /api/notifications/preferences",
-      "POST /api/notifications/preferences",
-      "PATCH /api/notifications/:id/read",
-      "POST /api/notifications/read-all",
-      "GET /api/campaigns/templates",
-      "POST /api/campaigns/templates",
-      "POST /api/campaigns/templates/delete",
-      "GET /api/campaigns/drafts",
-      "POST /api/campaigns/drafts",
-      "GET /api/campaigns/drafts/:draftId",
-      "PATCH /api/campaigns/drafts/:draftId",
-      "DELETE /api/campaigns/drafts/:draftId",
-      "POST /api/campaigns/extend",
-      "POST /api/campaigns/refund",
-      "GET /api/campaigns/:campaignId/submissions",
-      "POST /api/campaigns/verify-deposit",
-      "POST /api/campaigns/expire-action",
-      "POST /api/social/verify-x",
-      "POST /api/social/verify-telegram",
-      "POST /api/payouts/request",
-      "GET /api/reputation/me",
-      "GET /api/reputation/:profileId",
-      "GET /api/projects/:handle/reputation",
-      "GET /api/click-links/:id",
-      "POST /api/click-links/:id",
-      "GET /api/ads/:id/click",
-      "POST /api/ads/:id/click",
-      "GET /api/admin/payouts",
-      "GET /api/admin/submissions",
-      "GET /api/admin/users",
-      "GET /api/admin/campaigns",
-      "POST /api/admin/payouts/confirm",
-      "POST /api/admin/payouts/reject",
-      "POST /api/admin/submissions/override",
-      "POST /api/admin/users/moderate",
-      "POST /api/admin/campaigns/status",
-      "POST /api/admin/ads/:id/takedown",
-    ],
+    routes: manifest.routes,
+    routeManifestPublic: manifest.routeManifestPublic,
   });
 });
 

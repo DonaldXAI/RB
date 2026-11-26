@@ -12,7 +12,7 @@ import {
   throwDb,
   VESTING_HOURS,
 } from "../config.js";
-import { currentUser, requireUser, touchProfileIp } from "../middleware/auth.js";
+import { currentUser, requireUser } from "../middleware/auth.js";
 import { raidsSubmitLimiter } from "../middleware/rateLimits.js";
 import { gradeRaidSubmission } from "../services/openai.js";
 import { getUserProfile, verifyRaidAction } from "../services/twitter.js";
@@ -44,7 +44,6 @@ type Campaign = {
 export async function raidVerifyHandler(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const user = currentUser(req);
-    await touchProfileIp(user.id, req);
     const replaceRejected = req.originalUrl.includes("/resubmit");
     const body = parseBody(
       z.object({

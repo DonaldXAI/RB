@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { assertWalletAddress, HttpError, MIN_PAYOUT_USDC, parseBody, supabase, throwDb } from "../config.js";
-import { currentUser, requireUser, touchProfileIp } from "../middleware/auth.js";
+import { currentUser, requireUser } from "../middleware/auth.js";
 import { payoutsRequestLimiter } from "../middleware/rateLimits.js";
 
 const router = Router();
@@ -10,7 +10,6 @@ router.use(requireUser);
 router.post("/request", payoutsRequestLimiter, async (req, res, next) => {
   try {
     const user = currentUser(req);
-    await touchProfileIp(user.id, req);
     const body = parseBody(
       z.object({
         amountUsdc: z.coerce.number().positive().max(1_000_000),

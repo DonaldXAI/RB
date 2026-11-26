@@ -75,6 +75,10 @@ function loadConfig() {
   }
   assertProductionOrigins(data.FRONTEND_ORIGIN, corsExtraOrigins);
 
+  if (process.env.NODE_ENV === "production" && !data.ADMIN_TELEGRAM_CHAT_ID) {
+    console.warn("[config] ADMIN_TELEGRAM_CHAT_ID is unset; escrow underfunding will only appear in logs");
+  }
+
   return {
     ...data,
     corsExtraOrigins,

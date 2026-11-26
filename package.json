@@ -10,7 +10,8 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "audit:deps": "npm audit --audit-level=high"
   },
   "dependencies": {
     "@solana/spl-token": "^0.4.13",

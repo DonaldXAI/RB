@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { assertWalletAddress, HttpError, parseBody, supabase, throwDb } from "../config.js";
-import { currentUser, requireUser, touchProfileIp } from "../middleware/auth.js";
+import { currentUser, requireUser } from "../middleware/auth.js";
 import { assessBotRisk } from "../services/openai.js";
 import { getUserProfile } from "../services/twitter.js";
 
@@ -92,7 +92,6 @@ router.get("/status", async (req, res, next) => {
 router.post("/verify", async (req, res, next) => {
   try {
     const user = currentUser(req);
-    await touchProfileIp(user.id, req);
     parseBody(z.object({}).strict(), req.body ?? {});
 
     const loaded = await supabase

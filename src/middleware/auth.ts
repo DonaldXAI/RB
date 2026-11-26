@@ -39,6 +39,7 @@ export async function requireUser(req: Request, _res: Response, next: NextFuncti
     if (profile.data.is_banned === true) throw new HttpError(403, "This profile is banned");
 
     req.user = { id: data.user.id, email: data.user.email ?? null };
+    void touchProfileIp(data.user.id, req);
     next();
   } catch (error) {
     next(error);

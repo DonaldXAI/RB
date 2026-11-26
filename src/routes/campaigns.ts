@@ -13,7 +13,7 @@ import {
   supabase,
   throwDb,
 } from "../config.js";
-import { currentUser, requireUser, touchProfileIp } from "../middleware/auth.js";
+import { currentUser, requireUser } from "../middleware/auth.js";
 import { verifyUsdcCredit } from "../services/helius.js";
 
 const router = Router();
@@ -361,7 +361,6 @@ function depositCheckFailed(reason: string): never {
 router.post("/verify-deposit", async (req, res, next) => {
   try {
     const user = currentUser(req);
-    await touchProfileIp(user.id, req);
     const body = parseVerifyDepositBody(req.body);
     const campaign = await ownedCampaign(user.id, body.campaignId);
     if (campaign.status !== "awaiting_deposit") {

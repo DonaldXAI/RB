@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { HttpError, parseBody, supabase, throwDb } from "../config.js";
-import { currentUser, requireUser, touchProfileIp } from "../middleware/auth.js";
+import { currentUser, requireUser } from "../middleware/auth.js";
 import { socialVerifyLimiter } from "../middleware/rateLimits.js";
 import { assessBotRisk } from "../services/openai.js";
 import { verifyChannelMembership, verifyTelegramLoginWidget } from "../services/telegram.js";
@@ -14,7 +14,6 @@ router.post("/verify-x", socialVerifyLimiter, async (req, res, next) => {
   try {
     const user = currentUser(req);
     parseBody(z.object({}).strict(), req.body ?? {});
-    await touchProfileIp(user.id, req);
 
     const profile = await supabase.from("profiles").select("x_username").eq("id", user.id).maybeSingle();
     if (profile.error) throwDb(profile.error, "load x username");
@@ -47,7 +46,6 @@ const telegramAuthField = z.union([z.string(), z.number()]);
 router.post("/verify-telegram", socialVerifyLimiter, async (req, res, next) => {
   try {
     const user = currentUser(req);
-    await touchProfileIp(user.id, req);
     const body = parseBody(
       z.object({
         telegramUserId: z.union([z.string().regex(/^\d+$/), z.number().int().positive()]),
