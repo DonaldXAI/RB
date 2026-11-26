@@ -9,7 +9,10 @@
 ## Supabase
 
 - Run `sql/security_rls_hardening.sql` after base schema.
+- Run `sql/campaign_templates_worker_only.sql` if templates had old client RLS policies.
 - Run `sql/admin_nonces_message.sql` if not applied.
+
+Templates, drafts, and saved raids are **Render API only** (no direct Supabase from the browser).
 
 ## Verify
 

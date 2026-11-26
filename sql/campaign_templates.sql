@@ -11,20 +11,6 @@ create table if not exists public.campaign_templates (
 create index if not exists campaign_templates_user_idx on public.campaign_templates (user_id, updated_at desc);
 
 alter table public.campaign_templates enable row level security;
+revoke all on table public.campaign_templates from anon, authenticated;
 
-create policy campaign_templates_select_own
-  on public.campaign_templates for select
-  to authenticated
-  using (user_id = auth.uid());
-
-create policy campaign_templates_insert_own
-  on public.campaign_templates for insert
-  to authenticated
-  with check (user_id = auth.uid());
-
-create policy campaign_templates_delete_own
-  on public.campaign_templates for delete
-  to authenticated
-  using (user_id = auth.uid());
-
--- Worker uses service_role (bypasses RLS); policies help direct client reads if any.
+-- All access via Render (service_role). Run sql/campaign_templates_worker_only.sql on existing DBs.

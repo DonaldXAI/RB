@@ -76,22 +76,12 @@ create policy profiles_update_own_safe
 
 grant update on table public.profiles to authenticated;
 
--- 3) campaign_templates: optional direct client CRUD (mirror worker); remove if 100% via API
+-- 3) campaign_templates, drafts, saved: worker-only (Render API + service_role)
 drop policy if exists campaign_templates_select_own on public.campaign_templates;
 drop policy if exists campaign_templates_insert_own on public.campaign_templates;
 drop policy if exists campaign_templates_delete_own on public.campaign_templates;
 
-grant select, insert, delete on table public.campaign_templates to authenticated;
-
-create policy campaign_templates_select_own
-  on public.campaign_templates for select to authenticated using (user_id = auth.uid());
-create policy campaign_templates_insert_own
-  on public.campaign_templates for insert to authenticated with check (user_id = auth.uid());
-create policy campaign_templates_delete_own
-  on public.campaign_templates for delete to authenticated using (user_id = auth.uid());
-
--- drafts / saved: worker-only (no client policies)
--- ad banners: public read of active slot could be done via Render GET /api/ads/slots only
+-- ad banners: public read via Render GET /api/ads/slots only
 
 -- 4) Revoke execute on money RPCs from public roles (idempotent; adjust if function missing)
 do $$
