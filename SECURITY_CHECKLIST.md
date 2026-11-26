@@ -9,8 +9,11 @@
 ## Supabase
 
 - Run `sql/security_rls_hardening.sql` after base schema.
+- Run `sql/security_advisor_fixes.sql` (Security Advisor: RPC execute + search_path).
+- Run `sql/security_rls_explicit_deny.sql` (clears "RLS enabled no policy" on worker-only tables).
 - Run `sql/campaign_templates_worker_only.sql` if templates had old client RLS policies.
 - Run `sql/admin_nonces_message.sql` if not applied.
+- **Auth:** enable [Leaked password protection](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection) in Dashboard → Authentication.
 
 Templates, drafts, and saved raids are **Render API only** (no direct Supabase from the browser).
 

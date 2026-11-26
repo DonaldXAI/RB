@@ -42,7 +42,11 @@ create policy profiles_select_own
 
 -- Optional: allow users to update non-financial display fields only via trigger guard
 create or replace function public.profiles_block_sensitive_client_update()
-returns trigger language plpgsql as $$
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
 begin
   if current_setting('request.jwt.claim.role', true) = 'service_role' then
     return new;
