@@ -14,7 +14,7 @@ import {
   throwDb,
 } from "../config.js";
 import { currentUser, requireUser, touchProfileIp } from "../middleware/auth.js";
-import { verifyUsdcCredit, verifyUsdcTransfer } from "../services/helius.js";
+import { verifyUsdcCredit } from "../services/helius.js";
 
 const router = Router();
 router.use(requireUser);
@@ -411,15 +411,34 @@ router.post("/verify-deposit", async (req, res, next) => {
       }
       senderWallet = depositLeg.senderWallet;
     } else {
-      const expected = [{ destinationWallet: config.ESCROW_WALLET_ADDRESS, minAmountUsdc: fees.escrowUsdc }];
+      const depositLeg = await verifyUsdcCredit(
+        body.depositTxHash,
+        config.ESCROW_WALLET_ADDRESS,
+        fees.escrowUsdc,
+        true,
+      );
+      if (!depositLeg.verified) {
+        depositCheckFailed(depositLeg.error ?? "Escrow transfer could not be verified");
+      }
       if (fees.revenueUsdc > 0) {
-        expected.push({ destinationWallet: config.REVENUE_WALLET_ADDRESS, minAmountUsdc: fees.revenueUsdc });
+        const revenueLeg = await verifyUsdcCredit(
+          body.depositTxHash,
+          config.REVENUE_WALLET_ADDRESS,
+          fees.revenueUsdc,
+          true,
+        );
+        if (!revenueLeg.verified) {
+          depositCheckFailed(revenueLeg.error ?? "Revenue transfer could not be verified");
+        }
+        if (
+          depositLeg.senderWallet &&
+          revenueLeg.senderWallet &&
+          depositLeg.senderWallet !== revenueLeg.senderWallet
+        ) {
+          depositCheckFailed("Escrow and revenue transfers must share the same sender wallet");
+        }
       }
-      const transfer = await verifyUsdcTransfer(body.depositTxHash, expected);
-      if (!transfer.verified) {
-        depositCheckFailed(transfer.error ?? "Deposit could not be verified");
-      }
-      senderWallet = transfer.senderWallet;
+      senderWallet = depositLeg.senderWallet;
     }
 
     const activated = await supabase.rpc("activate_campaign_deposit", {

@@ -45,3 +45,16 @@ export const adsBookLimiter = limiter({
   limit: 5,
   keyGenerator: clientKey,
 });
+
+function adminKey(req: Request): string {
+  const wallet = (req.get("x-admin-wallet") ?? "").trim();
+  if (wallet) return `admin:${wallet}`;
+  return `admin-ip:${req.ip ?? "unknown"}`;
+}
+
+/** Tighter cap on escrow-signed admin actions (SIWS headers). */
+export const adminLimiter = limiter({
+  windowMs: 15 * 60 * 1000,
+  limit: 60,
+  keyGenerator: adminKey,
+});

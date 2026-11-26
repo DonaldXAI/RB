@@ -9,6 +9,7 @@ if (typeof globalThis.WebSocket === "undefined") {
 import bs58 from "bs58";
 import OpenAI from "openai";
 import { z } from "zod";
+import { assertKeylessEnvironment, assertProductionOrigins } from "./security/keylessEnv.js";
 
 export const MAINNET_USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 
@@ -51,6 +52,7 @@ function publicAddress(value: string, name: string): string {
 }
 
 function loadConfig() {
+  assertKeylessEnvironment(process.env);
   const parsed = EnvSchema.safeParse(process.env);
   if (!parsed.success) {
     const fields = parsed.error.issues
@@ -71,6 +73,7 @@ function loadConfig() {
     }
     corsExtraOrigins.push(origin);
   }
+  assertProductionOrigins(data.FRONTEND_ORIGIN, corsExtraOrigins);
 
   return {
     ...data,

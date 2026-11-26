@@ -20,7 +20,7 @@ import raidsRouter from "./routes/raids.js";
 import metaRouter from "./routes/meta.js";
 import socialRouter from "./routes/social.js";
 import { requireUser } from "./middleware/auth.js";
-import { raidsSubmitLimiter } from "./middleware/rateLimits.js";
+import { adminLimiter, raidsSubmitLimiter } from "./middleware/rateLimits.js";
 import { readEscrowUsdcBalance, readOwedObligationsUsdc } from "./services/escrow.js";
 
 const allowedOrigins = allowedOriginsSet();
@@ -28,7 +28,12 @@ const allowedOrigins = allowedOriginsSet();
 const app = express();
 app.disable("x-powered-by");
 app.set("trust proxy", 1);
-app.use(helmet());
+app.use(
+  helmet({
+    contentSecurityPolicy: false,
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+  }),
+);
 app.use(
   cors({
     origin(origin, callback) {
@@ -70,7 +75,7 @@ app.use("/api/ads", adsRouter);
 app.use("/api/reputation", reputationRouter);
 app.use("/api/projects", projectsRouter);
 app.use("/api/click-links", clickLinksRouter);
-app.use("/api/admin", adminRouter);
+app.use("/api/admin", adminLimiter, adminRouter);
 
 app.use((_req, res) => {
   res.status(404).json({ error: "Not found" });

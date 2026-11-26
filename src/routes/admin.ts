@@ -6,6 +6,7 @@ import { requireAdmin } from "../middleware/adminAuth.js";
 import { verifyBatchPayoutTx } from "../services/helius.js";
 
 const router = Router();
+// Admin auth is SIWS (x-admin-* headers) only. Bearer tokens are ignored and must not grant access.
 router.use(requireAdmin);
 
 const listLimit = z.coerce.number().int().min(1).max(100).default(50);

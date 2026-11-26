@@ -4,7 +4,7 @@ import bs58 from "bs58";
 import nacl from "tweetnacl";
 import { assertWalletAddress, config, HttpError, supabase } from "../config.js";
 
-const FIVE_MINUTES_MS = 5 * 60 * 1000;
+const ADMIN_SIGNATURE_TTL_MS = 3 * 60 * 1000;
 
 declare global {
   namespace Express {
@@ -43,7 +43,7 @@ export async function requireAdmin(req: Request, _res: Response, next: NextFunct
     if (wallet !== config.ESCROW_WALLET_ADDRESS) throw new HttpError(403, "Signer is not the escrow wallet");
 
     const issuedAt = readTimestamp(timestampHeader, message);
-    if (Math.abs(Date.now() - issuedAt) > FIVE_MINUTES_MS) {
+    if (Math.abs(Date.now() - issuedAt) > ADMIN_SIGNATURE_TTL_MS) {
       throw new HttpError(401, "Admin request has expired");
     }
 
