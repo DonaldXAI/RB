@@ -14,7 +14,7 @@ import {
   throwDb,
 } from "../config.js";
 import { currentUser, requireUser, touchProfileIp } from "../middleware/auth.js";
-import { verifyUsdcTransfer } from "../services/helius.js";
+import { verifyUsdcCredit, verifyUsdcTransfer } from "../services/helius.js";
 
 const router = Router();
 router.use(requireUser);
@@ -330,36 +330,119 @@ async function queueOwnedRefund(userId: string, campaign: Campaign) {
   return queued.data;
 }
 
+const verifyDepositFields = z.object({
+  campaignId: CampaignId.optional(),
+  campaign_id: CampaignId.optional(),
+  txSignature: txSignature.optional(),
+  deposit_tx_hash: txSignature.optional(),
+  revenue_tx_hash: txSignature.optional(),
+});
+
+function parseVerifyDepositBody(body: unknown): {
+  campaignId: string;
+  depositTxHash: string;
+  revenueTxHash: string | null;
+} {
+  const raw = parseBody(verifyDepositFields, body);
+  const campaignId = raw.campaignId ?? raw.campaign_id;
+  const depositTxHash = raw.deposit_tx_hash ?? raw.txSignature;
+  if (!campaignId || !depositTxHash) throw new HttpError(400, "Invalid request");
+  return {
+    campaignId,
+    depositTxHash,
+    revenueTxHash: raw.revenue_tx_hash ?? null,
+  };
+}
+
+function depositCheckFailed(reason: string): never {
+  throw new HttpError(400, reason);
+}
+
 router.post("/verify-deposit", async (req, res, next) => {
   try {
     const user = currentUser(req);
     await touchProfileIp(user.id, req);
-    const body = parseBody(z.object({ campaignId: CampaignId, txSignature }), req.body);
+    const body = parseVerifyDepositBody(req.body);
     const campaign = await ownedCampaign(user.id, body.campaignId);
-    if (campaign.status !== "awaiting_deposit") throw new HttpError(409, "Campaign is not awaiting a deposit");
-
-    const fees = recalculateCampaignDepositFees(campaign);
-    await assertSignatureUnused(body.txSignature);
-
-    const expected = [{ destinationWallet: config.ESCROW_WALLET_ADDRESS, minAmountUsdc: fees.escrowUsdc }];
-    if (fees.revenueUsdc > 0) {
-      expected.push({ destinationWallet: config.REVENUE_WALLET_ADDRESS, minAmountUsdc: fees.revenueUsdc });
+    if (campaign.status !== "awaiting_deposit") {
+      throw new HttpError(409, "Campaign is not awaiting a deposit");
     }
 
-    const transfer = await verifyUsdcTransfer(body.txSignature, expected);
-    if (!transfer.verified) throw new HttpError(400, "Deposit could not be verified");
+    const fees = recalculateCampaignDepositFees(campaign);
+
+    if (body.revenueTxHash && body.revenueTxHash === body.depositTxHash) {
+      depositCheckFailed("Deposit and revenue links must be different transactions");
+    }
+
+    await assertSignatureUnused(body.depositTxHash);
+    if (body.revenueTxHash) await assertSignatureUnused(body.revenueTxHash);
+
+    let senderWallet: string | undefined;
+
+    if (body.revenueTxHash) {
+      if (fees.revenueUsdc <= 0) {
+        depositCheckFailed("This campaign does not require a separate revenue transfer");
+      }
+      const depositLeg = await verifyUsdcCredit(
+        body.depositTxHash,
+        config.ESCROW_WALLET_ADDRESS,
+        fees.escrowUsdc,
+        true,
+      );
+      if (!depositLeg.verified) {
+        depositCheckFailed(depositLeg.error ?? "Escrow transfer could not be verified");
+      }
+
+      const revenueLeg = await verifyUsdcCredit(
+        body.revenueTxHash,
+        config.REVENUE_WALLET_ADDRESS,
+        fees.revenueUsdc,
+        true,
+      );
+      if (!revenueLeg.verified) {
+        depositCheckFailed(revenueLeg.error ?? "Revenue transfer could not be verified");
+      }
+
+      if (!depositLeg.senderWallet || !revenueLeg.senderWallet) {
+        depositCheckFailed("Sender wallet could not be determined");
+      }
+      if (depositLeg.senderWallet !== revenueLeg.senderWallet) {
+        depositCheckFailed("Both transfers must come from the same wallet");
+      }
+      senderWallet = depositLeg.senderWallet;
+    } else {
+      const expected = [{ destinationWallet: config.ESCROW_WALLET_ADDRESS, minAmountUsdc: fees.escrowUsdc }];
+      if (fees.revenueUsdc > 0) {
+        expected.push({ destinationWallet: config.REVENUE_WALLET_ADDRESS, minAmountUsdc: fees.revenueUsdc });
+      }
+      const transfer = await verifyUsdcTransfer(body.depositTxHash, expected);
+      if (!transfer.verified) {
+        depositCheckFailed(transfer.error ?? "Deposit could not be verified");
+      }
+      senderWallet = transfer.senderWallet;
+    }
 
     const activated = await supabase.rpc("activate_campaign_deposit", {
       p_campaign_id: campaign.id,
       p_founder_id: user.id,
-      p_tx: body.txSignature,
-      p_sender_wallet: transfer.senderWallet ?? null,
+      p_tx: body.depositTxHash,
+      p_sender_wallet: senderWallet ?? null,
       p_referral_rate: REFERRAL_DEPOSIT_RATE,
       p_platform_fee: fees.platformFeeUsdc,
       p_boost_fee: fees.boostFeeUsdc,
       p_founder_ip: clientIp(req),
     });
     if (activated.error) throwDb(activated.error, "activate campaign");
+
+    if (body.revenueTxHash) {
+      const revenueUsed = await supabase
+        .from("used_transactions")
+        .insert({ signature: body.revenueTxHash, purpose: "deposit" });
+      if (revenueUsed.error) {
+        console.error(`[campaigns] revenue tx mark failed: ${revenueUsed.error.message}`);
+        throw new HttpError(500, "Campaign activated but revenue transaction could not be recorded");
+      }
+    }
 
     res.json({
       ok: true,
@@ -369,7 +452,8 @@ router.post("/verify-deposit", async (req, res, next) => {
       platformFeeUsdc: fees.platformFeeUsdc,
       boostFeeUsdc: fees.boostFeeUsdc,
       remainingBudgetUsdc: fees.escrowUsdc,
-      depositTxHash: body.txSignature,
+      depositTxHash: body.depositTxHash,
+      revenueTxHash: body.revenueTxHash,
       referralBonusUsdc: asUsdc(activated.data),
     });
   } catch (error) {

@@ -83,6 +83,47 @@ async function loadTransaction(txSignature: string): Promise<
   }
 }
 
+/** Verifies a single USDC credit to one wallet (manual split deposits). */
+export async function verifyUsdcCredit(
+  txSignature: string,
+  destinationWallet: string,
+  amountUsdc: number,
+  exact = true,
+): Promise<TransferCheck> {
+  if (amountUsdc <= 0) return { verified: true, senderWallet: undefined };
+  const loaded = await loadTransaction(txSignature);
+  if (!loaded.ok) return { verified: false, error: loaded.error };
+  if (!loaded.tx.meta) return { verified: false, error: "Transaction has no balance data" };
+
+  const deltas = usdcDeltas(loaded.tx.meta);
+  const senderWallet = senderFrom(deltas);
+  let destination: string;
+  try {
+    destination = new PublicKey(destinationWallet).toBase58();
+  } catch {
+    return { verified: false, senderWallet, error: "Expected destination is not a public wallet" };
+  }
+  const received = deltas.get(destination) ?? 0n;
+  const expected = usdcRaw(amountUsdc);
+  if (exact) {
+    if (received !== expected) {
+      return {
+        verified: false,
+        senderWallet,
+        error: `${destination} received ${formatRaw(received)} USDC, expected exactly ${amountUsdc}`,
+      };
+    }
+  } else if (received < expected) {
+    return {
+      verified: false,
+      senderWallet,
+      error: `${destination} received ${formatRaw(received)} USDC, expected at least ${amountUsdc}`,
+    };
+  }
+
+  return { verified: true, senderWallet };
+}
+
 export async function verifyUsdcTransfer(
   txSignature: string,
   expectedTransfers: ExpectedTransfer[],
