@@ -5,6 +5,7 @@ import helmet from "helmet";
 import cron from "node-cron";
 import { allowedOriginsSet, CORS_ALLOWED_HEADERS } from "./corsPolicy.js";
 import { config, HttpError, REFERRAL_VEST_BONUS_USDC, supabase } from "./config.js";
+import accountRouter from "./routes/account.js";
 import adminRouter from "./routes/admin.js";
 import adsRouter from "./routes/ads.js";
 import clickLinksRouter from "./routes/clickLinks.js";
@@ -62,6 +63,7 @@ app.get("/health", (_req, res) => {
 });
 
 app.use("/api", metaRouter);
+app.use("/api/account", accountRouter);
 app.use("/api/campaigns", campaignsRouter);
 app.post("/api/verify", requireUser, raidsSubmitLimiter, raidVerifyHandler);
 app.post("/verify", requireUser, raidsSubmitLimiter, raidVerifyHandler);

@@ -18,6 +18,42 @@ import { gradeRaidSubmission } from "../services/openai.js";
 import { getUserProfile, verifyRaidAction } from "../services/twitter.js";
 
 const router = Router();
+
+const historyLimit = z.coerce.number().int().min(1).max(100).default(50);
+
+router.get("/history", requireUser, async (req, res, next) => {
+  try {
+    const user = currentUser(req);
+    const limit = historyLimit.parse(req.query.limit ?? 50);
+    const rows = await supabase
+      .from("submissions")
+      .select(
+        `id, campaign_id, action_type, tweet_url, status, earned_usdc, vests_at, vested, ai_reason, created_at,
+        campaigns (id, project_name, project_handle, status, ends_at)`,
+      )
+      .eq("raider_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(limit);
+    if (rows.error) throwDb(rows.error, "load raid history");
+    const history = (rows.data ?? []).map((row) => ({
+      submissionId: row.id,
+      campaignId: row.campaign_id,
+      actionType: row.action_type,
+      tweetUrl: row.tweet_url,
+      status: row.status,
+      earnedUsdc: asUsdc(row.earned_usdc),
+      vestsAt: row.vests_at,
+      vested: row.vested,
+      aiReason: row.ai_reason,
+      createdAt: row.created_at,
+      campaign: row.campaigns,
+    }));
+    res.json({ ok: true, history });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.use(requireUser);
 
 const proofUrl = z

@@ -8,6 +8,60 @@ router.use(requireUser);
 
 const CampaignId = z.string().uuid();
 
+function walletLinked(address: string | null | undefined): boolean {
+  const trimmed = address?.trim();
+  return Boolean(trimmed && trimmed.length >= 32 && trimmed.length <= 64);
+}
+
+router.get("/flags", async (req, res, next) => {
+  try {
+    const user = currentUser(req);
+    const profile = await supabase
+      .from("profiles")
+      .select("x_username, x_followed, tg_joined, wallet_address")
+      .eq("id", user.id)
+      .maybeSingle();
+    if (profile.error) throwDb(profile.error, "load founder profile");
+    if (!profile.data) throw new HttpError(404, "Profile not found");
+
+    const awaiting = await supabase
+      .from("campaigns")
+      .select("id", { count: "exact", head: true })
+      .eq("founder_id", user.id)
+      .eq("status", "awaiting_deposit");
+    if (awaiting.error) throwDb(awaiting.error, "count awaiting deposits");
+
+    const xUsernameSet = Boolean(profile.data.x_username?.trim());
+    const xFollowed = profile.data.x_followed === true;
+    const tgJoined = profile.data.tg_joined === true;
+    const wallet = walletLinked(profile.data.wallet_address as string | null);
+    const payoutGatesComplete = xFollowed && tgJoined && wallet;
+
+    const pending: string[] = [];
+    if (!xUsernameSet) pending.push("set_x_username");
+    if (!xFollowed) pending.push("verify_x_follow");
+    if (!tgJoined) pending.push("verify_telegram");
+    if (!wallet) pending.push("link_wallet");
+
+    res.json({
+      ok: true,
+      status: pending.length === 0 ? "complete" : "pending",
+      flags: {
+        xUsernameSet,
+        xFollowed,
+        tgJoined,
+        walletLinked: wallet,
+        payoutGatesComplete,
+        canRequestPayout: payoutGatesComplete,
+      },
+      pending,
+      campaignsAwaitingDeposit: awaiting.count ?? 0,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get("/performance", async (req, res, next) => {
   try {
     const user = currentUser(req);

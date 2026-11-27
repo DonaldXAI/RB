@@ -8,15 +8,45 @@ import {
   HttpError,
   parseBody,
   parseParams,
+  PLATFORM_FEE_RATE,
+  RAID_ACTIONS,
   recalculateCampaignDepositFees,
   REFERRAL_DEPOSIT_RATE,
   supabase,
   throwDb,
 } from "../config.js";
+import { mapPublicCampaign, PUBLIC_CAMPAIGN_COLUMNS } from "../lib/campaignPublic.js";
 import { currentUser, requireUser } from "../middleware/auth.js";
 import { verifyUsdcCredit } from "../services/helius.js";
 
 const router = Router();
+
+const browseLimit = z.coerce.number().int().min(1).max(50).default(30);
+
+router.get("/browse", async (req, res, next) => {
+  try {
+    const limit = browseLimit.parse(req.query.limit ?? 30);
+    const includeEnded = String(req.query.includeEnded ?? "false").toLowerCase() === "true";
+    let query = supabase
+      .from("campaigns")
+      .select(PUBLIC_CAMPAIGN_COLUMNS)
+      .in("status", ["active", "paused"])
+      .order("created_at", { ascending: false })
+      .limit(limit);
+    if (!includeEnded) {
+      query = query.gt("ends_at", new Date().toISOString());
+    }
+    const rows = await query;
+    if (rows.error) throwDb(rows.error, "browse campaigns");
+    res.json({
+      ok: true,
+      campaigns: (rows.data ?? []).map((row) => mapPublicCampaign(row as Record<string, unknown>)),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.use(requireUser);
 
 const CampaignId = z.string().uuid();
@@ -72,6 +102,137 @@ function parseTemplateDeleteId(body: unknown): string {
 const DraftId = z.string().uuid();
 const campaignDraft = z.record(z.unknown());
 const extraHours = z.union([z.literal(24), z.literal(48), z.literal(72)]);
+
+const launchInput = z
+  .object({
+    projectName: z.string().trim().min(1).max(80).optional(),
+    project_name: z.string().trim().min(1).max(80).optional(),
+    projectHandle: z.string().trim().max(64).optional(),
+    project_handle: z.string().trim().max(64).optional(),
+    totalBudgetUsdc: z.coerce.number().positive().max(1_000_000).optional(),
+    total_budget_usdc: z.coerce.number().positive().max(1_000_000).optional(),
+    durationHours: z.coerce.number().int().min(1).max(24 * 14).optional(),
+    duration_hours: z.coerce.number().int().min(1).max(24 * 14).optional(),
+    endsAt: z.string().datetime().optional(),
+    ends_at: z.string().datetime().optional(),
+    minFollowers: z.coerce.number().int().min(0).max(1_000_000).optional(),
+    min_followers: z.coerce.number().int().min(0).max(1_000_000).optional(),
+    baseRates: z.record(z.coerce.number().nonnegative()).optional(),
+    base_rates: z.record(z.coerce.number().nonnegative()).optional(),
+    brief: z.string().max(5000).optional(),
+    tickerOrHashtag: z.string().max(120).optional(),
+    ticker_or_hashtag: z.string().max(120).optional(),
+    targetUsername: z.string().max(64).optional(),
+    target_username: z.string().max(64).optional(),
+    targetTweetId: z.string().max(64).optional(),
+    target_tweet_id: z.string().max(64).optional(),
+    boostFeeUsdc: z.coerce.number().nonnegative().max(100_000).optional(),
+    boost_fee_usdc: z.coerce.number().nonnegative().max(100_000).optional(),
+    draftId: z.string().uuid().optional(),
+    draft_id: z.string().uuid().optional(),
+  })
+  .strict();
+
+function parseLaunchBody(body: unknown) {
+  const raw = parseBody(launchInput, body);
+  const projectName = (raw.projectName ?? raw.project_name ?? "").trim();
+  if (!projectName) throw new HttpError(400, "Invalid request");
+  const totalBudgetUsdc = raw.totalBudgetUsdc ?? raw.total_budget_usdc;
+  if (totalBudgetUsdc === undefined || totalBudgetUsdc < 10) {
+    throw new HttpError(400, "Campaign budget must be at least 10 USDC");
+  }
+  const baseRates = { ...(raw.baseRates ?? raw.base_rates ?? {}) };
+  const hasRate = RAID_ACTIONS.some((action) => Number(baseRates[action]) > 0);
+  if (!hasRate) throw new HttpError(400, "Set at least one positive action payout rate");
+
+  let endsAt = raw.endsAt ?? raw.ends_at;
+  if (!endsAt) {
+    const hours = raw.durationHours ?? raw.duration_hours ?? 72;
+    endsAt = new Date(Date.now() + hours * 60 * 60 * 1000).toISOString();
+  }
+
+  const boostFeeUsdc = asUsdc(raw.boostFeeUsdc ?? raw.boost_fee_usdc ?? 0);
+  const platformFeeUsdc = asUsdc(totalBudgetUsdc * PLATFORM_FEE_RATE);
+
+  const handleRaw = (raw.projectHandle ?? raw.project_handle ?? "").trim();
+  const projectHandle = handleRaw
+    ? handleRaw.replace(/^@/, "").toLowerCase()
+    : projectName
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 64);
+
+  return {
+    projectName,
+    projectHandle,
+    totalBudgetUsdc: asUsdc(totalBudgetUsdc),
+    platformFeeUsdc,
+    boostFeeUsdc,
+    bundleBoostFeeUsdc: boostFeeUsdc,
+    endsAt,
+    minFollowers: raw.minFollowers ?? raw.min_followers ?? 0,
+    baseRates,
+    brief: (raw.brief ?? "").slice(0, 5000),
+    tickerOrHashtag: (raw.tickerOrHashtag ?? raw.ticker_or_hashtag ?? "").slice(0, 120),
+    targetUsername: raw.targetUsername ?? raw.target_username ?? null,
+    targetTweetId: raw.targetTweetId ?? raw.target_tweet_id ?? null,
+    draftId: raw.draftId ?? raw.draft_id ?? null,
+  };
+}
+
+router.post("/launch", async (req, res, next) => {
+  try {
+    const user = currentUser(req);
+    const body = parseLaunchBody(req.body);
+    const inserted = await supabase
+      .from("campaigns")
+      .insert({
+        founder_id: user.id,
+        status: "awaiting_deposit",
+        project_name: body.projectName,
+        project_handle: body.projectHandle,
+        total_budget_usdc: body.totalBudgetUsdc,
+        platform_fee_usdc: body.platformFeeUsdc,
+        boost_fee_usdc: body.boostFeeUsdc,
+        bundle_boost_fee_usdc: body.bundleBoostFeeUsdc,
+        remaining_budget_usdc: 0,
+        ends_at: body.endsAt,
+        min_followers: body.minFollowers,
+        base_rates: body.baseRates,
+        brief: body.brief,
+        ticker_or_hashtag: body.tickerOrHashtag,
+        target_username: body.targetUsername,
+        target_tweet_id: body.targetTweetId,
+      })
+      .select(PUBLIC_CAMPAIGN_COLUMNS)
+      .single();
+    if (inserted.error) throwDb(inserted.error, "launch campaign");
+
+    if (body.draftId) {
+      await supabase
+        .from("campaign_drafts")
+        .update({ campaign_id: inserted.data.id, updated_at: new Date().toISOString() })
+        .eq("id", body.draftId)
+        .eq("user_id", user.id);
+    }
+
+    const fees = recalculateCampaignDepositFees(inserted.data as { total_budget_usdc: number; boost_fee_usdc?: number; bundle_boost_fee_usdc?: number });
+    res.status(201).json({
+      ok: true,
+      campaign: mapPublicCampaign(inserted.data as Record<string, unknown>),
+      status: "awaiting_deposit",
+      deposit: {
+        escrowUsdc: fees.escrowUsdc,
+        revenueUsdc: fees.revenueUsdc,
+        platformFeeUsdc: fees.platformFeeUsdc,
+        boostFeeUsdc: fees.boostFeeUsdc,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
 
 router.get("/templates", async (req, res, next) => {
   try {
