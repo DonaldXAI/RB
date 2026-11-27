@@ -107,11 +107,22 @@ export async function getUserProfile(
     throw new HttpError(400, "X account was not found or is unavailable");
   }
 
-  const createdAtRaw = String(data.createdAt ?? data.created_at ?? "");
-  const createdAt = parseCreatedAt(createdAtRaw);
-  const ageMs = Date.now() - createdAt.getTime();
-  if (requireMinAge && ageMs < MIN_ACCOUNT_AGE_MS) {
-    throw new HttpError(400, "X account must be at least 90 days old");
+  const createdAtRaw = String(data.createdAt ?? data.created_at ?? "").trim();
+  let createdAtIso = new Date(0).toISOString();
+  let ageDays = 0;
+  if (createdAtRaw) {
+    try {
+      const createdAt = parseCreatedAt(createdAtRaw);
+      const ageMs = Date.now() - createdAt.getTime();
+      if (requireMinAge && ageMs < MIN_ACCOUNT_AGE_MS) {
+        throw new HttpError(400, "X account must be at least 90 days old");
+      }
+      createdAtIso = createdAt.toISOString();
+      ageDays = Math.floor(ageMs / (24 * 60 * 60 * 1000));
+    } catch (error) {
+      if (error instanceof HttpError) throw error;
+      console.warn("[twitter] could not parse createdAt for", handle);
+    }
   }
 
   const userName = String(data.userName ?? data.username ?? "");
@@ -124,8 +135,8 @@ export async function getUserProfile(
     followers: Number(data.followers ?? data.followersCount ?? 0),
     following: Number(data.following ?? data.followingCount ?? data.friendsCount ?? 0),
     tweetCount: Number(data.statusesCount ?? data.tweetCount ?? data.statuses_count ?? 0),
-    createdAt: createdAt.toISOString(),
-    ageDays: Math.floor(ageMs / (24 * 60 * 60 * 1000)),
+    createdAt: createdAtIso,
+    ageDays,
     bio: String(data.description ?? data.bio ?? ""),
     profileImage: data.profilePicture ? String(data.profilePicture) : data.profileImageUrl ? String(data.profileImageUrl) : null,
     badgeType: mapXBadgeType(data),
