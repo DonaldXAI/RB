@@ -233,6 +233,12 @@ export function throwDb(error: { message: string; code?: string }, scope: string
       "Database is missing eligibility columns. Run sql/profiles_eligibility_badge.sql in Supabase, then retry.",
     );
   }
+  if (msg === "forbidden" || (msg.includes("forbidden") && !msg.includes("origin"))) {
+    throw new HttpError(
+      503,
+      "Profile update blocked by database trigger. Run sql/fix_profiles_trigger_service_role.sql in Supabase.",
+    );
+  }
   if (error.code === "23505") {
     if (error.message.includes("submissions_campaign_raider")) {
       throw new HttpError(409, "You already submitted a raid for this campaign");

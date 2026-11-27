@@ -10,6 +10,9 @@ security definer
 set search_path = public
 as $$
 begin
+  if coalesce(auth.role(), '') = 'service_role' then
+    return new;
+  end if;
   if current_setting('request.jwt.claim.role', true) = 'service_role' then
     return new;
   end if;

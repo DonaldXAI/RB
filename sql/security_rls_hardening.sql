@@ -48,11 +48,14 @@ security definer
 set search_path = public
 as $$
 begin
+  if coalesce(auth.role(), '') = 'service_role' then
+    return new;
+  end if;
   if current_setting('request.jwt.claim.role', true) = 'service_role' then
     return new;
   end if;
   if auth.uid() is distinct from old.id then
-  raise exception 'FORBIDDEN';
+    raise exception 'FORBIDDEN';
   end if;
   if new.available_usdc is distinct from old.available_usdc
     or new.pending_usdc is distinct from old.pending_usdc
