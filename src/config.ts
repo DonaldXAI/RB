@@ -221,6 +221,18 @@ const DB_MESSAGES: Record<string, { status: number; message: string }> = {
 
 export function throwDb(error: { message: string; code?: string }, scope: string): never {
   console.error(`[db] ${scope}: ${error.message}`);
+  const msg = error.message.toLowerCase();
+  if (
+    error.code === "PGRST204" ||
+    error.code === "42703" ||
+    (msg.includes("column") && msg.includes("does not exist")) ||
+    msg.includes("could not find the")
+  ) {
+    throw new HttpError(
+      503,
+      "Database is missing eligibility columns. Run sql/profiles_eligibility_badge.sql in Supabase, then retry.",
+    );
+  }
   if (error.code === "23505") {
     if (error.message.includes("submissions_campaign_raider")) {
       throw new HttpError(409, "You already submitted a raid for this campaign");

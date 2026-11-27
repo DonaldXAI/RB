@@ -118,7 +118,7 @@ router.post("/verify", async (req, res, next) => {
     if (!xUsername) throw new HttpError(400, "Set your X username before an eligibility check");
 
     const startedAt = new Date().toISOString();
-    await supabase
+    const pending = await supabase
       .from("profiles")
       .update({
         verification_status: "pending",
@@ -129,6 +129,7 @@ router.post("/verify", async (req, res, next) => {
         },
       })
       .eq("id", user.id);
+    if (pending.error) throwDb(pending.error, "mark eligibility pending");
 
     const xProfile = await getUserProfile(xUsername, { requireMinAge: false });
     const badge = await persistXBadge(user.id, xProfile.badgeType);
