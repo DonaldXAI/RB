@@ -132,12 +132,15 @@ export async function raidVerifyHandler(req: Request, res: Response, next: NextF
     if (campaign.status !== "active") throw new HttpError(409, "Campaign is not active");
     if (Date.parse(campaign.ends_at) <= Date.now()) throw new HttpError(409, "Campaign has ended");
 
-    const xProfile = await getUserProfile(xUsername);
+    const xProfile = await getUserProfile(xUsername, { requireMinAge: false });
     const minFollowers = Number(campaign.min_followers ?? 0);
     if (xProfile.followers < minFollowers) {
       throw new HttpError(403, `This campaign requires at least ${minFollowers} followers`);
     }
-    await supabase.from("profiles").update({ x_followers: xProfile.followers }).eq("id", user.id);
+    await supabase
+      .from("profiles")
+      .update({ x_followers: xProfile.followers, x_badge_type: xProfile.badgeType })
+      .eq("id", user.id);
 
     const rates = campaign.base_rates ?? {};
     const baseRate = Number(rates[body.actionType]);

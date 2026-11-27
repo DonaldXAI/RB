@@ -4,6 +4,8 @@ const BASE = "https://api.twitterapi.io";
 const MIN_ACCOUNT_AGE_MS = 90 * 24 * 60 * 60 * 1000;
 const RETWEETER_PAGES = 5;
 
+export type XBadgeType = "gold" | "blue" | "grey" | "none";
+
 export type XProfile = {
   id: string;
   username: string;
@@ -14,7 +16,24 @@ export type XProfile = {
   ageDays: number;
   bio: string;
   profileImage: string | null;
+  badgeType: XBadgeType;
 };
+
+export type GetUserProfileOptions = {
+  /** Eligibility uses true; follow/raid lookups should pass false. */
+  requireMinAge?: boolean;
+};
+
+/** Maps twitterapi.io verification fields to RaidHive pay tiers (no paid X plan on RaidHive). */
+export function mapXBadgeType(data: Record<string, unknown>): XBadgeType {
+  const verifiedType = String(data.verifiedType ?? data.verified_type ?? "")
+    .trim()
+    .toLowerCase();
+  if (verifiedType === "business") return "gold";
+  if (verifiedType === "government") return "grey";
+  if (data.isBlueVerified === true || data.is_blue_verified === true) return "blue";
+  return "none";
+}
 
 export type RaidVerification = {
   tweetText: string;
@@ -71,7 +90,11 @@ function parseCreatedAt(value: string): Date {
   return new Date(parsed);
 }
 
-export async function getUserProfile(username: string): Promise<XProfile> {
+export async function getUserProfile(
+  username: string,
+  options: GetUserProfileOptions = {},
+): Promise<XProfile> {
+  const requireMinAge = options.requireMinAge !== false;
   const handle = normalizeHandle(username);
   const body = await twitterGet<{
     status?: string;
@@ -87,7 +110,9 @@ export async function getUserProfile(username: string): Promise<XProfile> {
   const createdAtRaw = String(data.createdAt ?? data.created_at ?? "");
   const createdAt = parseCreatedAt(createdAtRaw);
   const ageMs = Date.now() - createdAt.getTime();
-  if (ageMs < MIN_ACCOUNT_AGE_MS) throw new HttpError(400, "X account must be at least 90 days old");
+  if (requireMinAge && ageMs < MIN_ACCOUNT_AGE_MS) {
+    throw new HttpError(400, "X account must be at least 90 days old");
+  }
 
   const userName = String(data.userName ?? data.username ?? "");
   const id = String(data.id ?? "");
@@ -103,6 +128,7 @@ export async function getUserProfile(username: string): Promise<XProfile> {
     ageDays: Math.floor(ageMs / (24 * 60 * 60 * 1000)),
     bio: String(data.description ?? data.bio ?? ""),
     profileImage: data.profilePicture ? String(data.profilePicture) : data.profileImageUrl ? String(data.profileImageUrl) : null,
+    badgeType: mapXBadgeType(data),
   };
 }
 

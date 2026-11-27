@@ -1,7 +1,8 @@
 import { Router } from "express";
 import { z } from "zod";
-import { assertWalletAddress, HttpError, parseBody, supabase, throwDb } from "../config.js";
+import { asUsdc, assertWalletAddress, HttpError, parseBody, supabase, throwDb } from "../config.js";
 import { currentUser, requireUser } from "../middleware/auth.js";
+import { persistXBadge } from "../lib/xBadge.js";
 import { assessBotRisk } from "../services/openai.js";
 import { getUserProfile } from "../services/twitter.js";
 
@@ -63,7 +64,7 @@ router.get("/status", async (req, res, next) => {
     const row = await supabase
       .from("profiles")
       .select(
-        "verification_status, is_crypto_verified, account_age_days, x_followers, posts_count, ai_verification_notes",
+        "verification_status, is_crypto_verified, account_age_days, x_followers, posts_count, ai_verification_notes, x_badge_type, badge_multiplier",
       )
       .eq("id", user.id)
       .maybeSingle();
@@ -83,6 +84,8 @@ router.get("/status", async (req, res, next) => {
       postsCount: row.data.posts_count,
       lastCheckAt: notes.eligibilityLastCheckAt ?? null,
       checklist: checklist ?? [],
+      xBadgeType: row.data.x_badge_type ?? "none",
+      badgeMultiplier: asUsdc(row.data.badge_multiplier ?? 1),
     });
   } catch (error) {
     next(error);
@@ -127,9 +130,10 @@ router.post("/verify", async (req, res, next) => {
       })
       .eq("id", user.id);
 
-    const xProfile = await getUserProfile(xUsername);
+    const xProfile = await getUserProfile(xUsername, { requireMinAge: false });
+    const badge = await persistXBadge(user.id, xProfile.badgeType);
     const risk = await assessBotRisk(xProfile);
-    const followerTarget = minFollowers(profile.x_badge_type);
+    const followerTarget = minFollowers(badge.xBadgeType);
 
     const checklist: EligibilityChecklistItem[] = [];
 
@@ -213,6 +217,7 @@ router.post("/verify", async (req, res, next) => {
         account_age_days: xProfile.ageDays,
         x_followers: xProfile.followers,
         posts_count: xProfile.tweetCount,
+        x_badge_type: badge.xBadgeType,
         verification_status: passed ? "verified" : "rejected",
         is_crypto_verified: passed,
         ai_verification_notes: resultNotes,
@@ -235,6 +240,8 @@ router.post("/verify", async (req, res, next) => {
       postsCount: xProfile.tweetCount,
       checklist,
       lastCheckAt: finishedAt,
+      xBadgeType: badge.xBadgeType,
+      badgeMultiplier: badge.badgeMultiplier,
     });
   } catch (error) {
     next(error);

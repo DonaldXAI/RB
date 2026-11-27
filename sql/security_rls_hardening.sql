@@ -59,6 +59,7 @@ begin
     or new.strikes is distinct from old.strikes
     or new.is_banned is distinct from old.is_banned
     or new.badge_multiplier is distinct from old.badge_multiplier
+    or new.x_badge_type is distinct from old.x_badge_type
   then
     raise exception 'FORBIDDEN';
   end if;

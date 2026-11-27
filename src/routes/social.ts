@@ -5,6 +5,7 @@ import { currentUser, requireUser } from "../middleware/auth.js";
 import { socialVerifyLimiter } from "../middleware/rateLimits.js";
 import { assessBotRisk } from "../services/openai.js";
 import { verifyChannelMembership, verifyTelegramLoginWidget } from "../services/telegram.js";
+import { persistXBadge } from "../lib/xBadge.js";
 import { getUserProfile, verifyOfficialFollow } from "../services/twitter.js";
 
 const router = Router();
@@ -20,7 +21,8 @@ router.post("/verify-x", socialVerifyLimiter, async (req, res, next) => {
     const username = profile.data?.x_username as string | null;
     if (!username) throw new HttpError(400, "Set your X username before verifying");
 
-    const xProfile = await getUserProfile(username);
+    const xProfile = await getUserProfile(username, { requireMinAge: false });
+    const badge = await persistXBadge(user.id, xProfile.badgeType);
     const risk = await assessBotRisk(xProfile);
     if (risk.isBotLikely) throw new HttpError(403, "X account did not pass the bot check");
 
@@ -29,13 +31,22 @@ router.post("/verify-x", socialVerifyLimiter, async (req, res, next) => {
 
     const { data, error } = await supabase
       .from("profiles")
-      .update({ x_followed: true, x_followers: xProfile.followers })
+      .update({
+        x_followed: true,
+        x_followers: xProfile.followers,
+        x_badge_type: badge.xBadgeType,
+      })
       .eq("id", user.id)
-      .select("x_username, x_followed, x_followers")
+      .select("x_username, x_followed, x_followers, x_badge_type, badge_multiplier")
       .single();
     if (error) throwDb(error, "save x verification");
 
-    res.json({ ok: true, profile: data });
+    res.json({
+      ok: true,
+      profile: data,
+      xBadgeType: badge.xBadgeType,
+      badgeMultiplier: badge.badgeMultiplier,
+    });
   } catch (error) {
     next(error);
   }
