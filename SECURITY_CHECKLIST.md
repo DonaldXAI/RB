@@ -2,7 +2,7 @@
 
 ## Deploy env
 
-- Set `NODE_ENV=production` on Render (enforces https `FRONTEND_ORIGIN` / `CORS_EXTRA_ORIGINS`).
+- Set `NODE_ENV=production` on Render (enforces https `FRONTEND_ORIGIN` / `CORS_EXTRA_ORIGINS`). TypeScript stays in `dependencies` so builds work when npm omits devDependencies in production.
 - Set **`ADMIN_TELEGRAM_CHAT_ID`** on production (escrow underfunding alerts; logs always).
 - Production `GET /api` returns route **count only** (full manifest is dev-only; do not rely on `PUBLIC_ROUTE_MANIFEST` in prod).
 - Never add env vars whose names match `*PRIVATE*KEY*`, `*MNEMONIC*`, etc. (startup aborts).

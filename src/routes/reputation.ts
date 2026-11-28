@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type NextFunction, type Request, type Response } from "express";
 import { z } from "zod";
 import { HttpError, parseParams, supabase, throwDb } from "../config.js";
 import { mapReputation, reputationColumns } from "../lib/reputation.js";
@@ -8,7 +8,7 @@ const router = Router();
 
 const ProfileId = z.string().uuid();
 
-router.get("/me", requireUser, async (req, res, next) => {
+router.get("/me", requireUser, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const user = currentUser(req);
     const row = await supabase.from("profiles").select(reputationColumns).eq("id", user.id).maybeSingle();
@@ -20,7 +20,7 @@ router.get("/me", requireUser, async (req, res, next) => {
   }
 });
 
-router.get("/:profileId", async (req, res, next) => {
+router.get("/:profileId", async (req: Request, res: Response, next: NextFunction) => {
   try {
     const profileId = parseParams(ProfileId, req.params.profileId);
     const row = await supabase
