@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { HttpError, supabase, throwDb } from "../config.js";
+import { buildProfileBadges } from "../lib/badges.js";
 import { currentUser, requireUser } from "../middleware/auth.js";
 
 const router = Router();
@@ -35,7 +36,7 @@ router.get("/verification", async (req, res, next) => {
     const row = await supabase
       .from("profiles")
       .select(
-        "x_username, x_followed, tg_joined, wallet_address, verification_status, is_crypto_verified, ai_verification_notes",
+        "x_username, x_followed, tg_joined, wallet_address, verification_status, is_crypto_verified, x_badge_type, ai_verification_notes",
       )
       .eq("id", user.id)
       .maybeSingle();
@@ -74,12 +75,21 @@ router.get("/verification", async (req, res, next) => {
       verificationStatus,
     });
 
+    const profileBadges = buildProfileBadges(
+      row.data.x_badge_type as string | null,
+      isCryptoVerified,
+      verificationStatus,
+    );
+
     res.json({
       ok: true,
       status: pending.length === 0 ? "complete" : "pending",
       flags,
       pending,
       lastEligibilityCheckAt: (notes.eligibilityLastCheckAt as string | undefined) ?? null,
+      xBadgeType: profileBadges.xBadgeType,
+      raidHiveVerified: profileBadges.raidHiveVerified,
+      badges: profileBadges.badges,
     });
   } catch (error) {
     next(error);

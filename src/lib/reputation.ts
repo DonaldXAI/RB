@@ -1,15 +1,25 @@
 import { asUsdc } from "../config.js";
+import { buildProfileBadges } from "./badges.js";
 
 export function mapReputation(row: Record<string, unknown>) {
   const strikes = Number(row.strikes ?? 0);
   const tier = (row.raider_tier as string | null) ?? "bronze";
+  const profileBadges = buildProfileBadges(
+    row.x_badge_type as string | null,
+    row.is_crypto_verified as boolean | null,
+    row.verification_status as string | null,
+  );
   return {
     profileId: row.id,
     xUsername: row.x_username ?? null,
     displayName: row.display_name ?? null,
     raiderTier: tier,
     strikes,
-    badgeType: row.x_badge_type ?? "none",
+    /** @deprecated use xBadgeType — X pay tier only */
+    badgeType: profileBadges.xBadgeType,
+    xBadgeType: profileBadges.xBadgeType,
+    raidHiveVerified: profileBadges.raidHiveVerified,
+    badges: profileBadges.badges,
     badgeMultiplier: asUsdc(row.badge_multiplier ?? 1),
     xFollowers: Number(row.x_followers ?? 0),
     totalEarnedUsdc: asUsdc(row.total_earned_usdc ?? 0),
@@ -23,4 +33,4 @@ export function mapReputation(row: Record<string, unknown>) {
 }
 
 export const reputationColumns =
-  "id, x_username, display_name, raider_tier, strikes, x_badge_type, badge_multiplier, x_followers, total_earned_usdc, x_followed, tg_joined, is_banned";
+  "id, x_username, display_name, raider_tier, strikes, x_badge_type, badge_multiplier, x_followers, total_earned_usdc, x_followed, tg_joined, is_banned, verification_status, is_crypto_verified";

@@ -298,7 +298,10 @@ If either false, payout fails with **403** `"Verify X and Telegram before reques
     "displayName": "string | null",
     "raiderTier": "bronze | silver | gold",
     "strikes": 0,
-    "badgeType": "string",
+    "badgeType": "gold | blue | grey | none",
+    "xBadgeType": "gold | blue | grey | none",
+    "raidHiveVerified": true,
+    "badges": [{ "kind": "x", "variant": "blue" }, { "kind": "raidhive" }],
     "badgeMultiplier": 1,
     "xFollowers": 0,
     "totalEarnedUsdc": 0,
@@ -311,7 +314,26 @@ If either false, payout fails with **403** `"Verify X and Telegram before reques
 }
 ```
 
-**UI mapping:** Payout-ready → `reputation.xFollowed && reputation.tgJoined`. Crypto-verified raider → `eligibility.passed`. Set `x_username` on own profile (allowed client update) before X verify or raid submit.
+**UI mapping:** Payout-ready → `reputation.xFollowed && reputation.tgJoined`. Crypto-verified raider → `reputation.raidHiveVerified` or `eligibility.passed`. Set `x_username` on own profile (allowed client update) before X verify or raid submit.
+
+### Dual badges (X pay tier vs RaidHive verified)
+
+| Field | Meaning |
+|-------|---------|
+| `xBadgeType` | `gold` \| `blue` \| `grey` \| `none` — X/Premium/org icon only; affects **pay multiplier**, not RaidHive approval |
+| `raidHiveVerified` | `true` after full eligibility (`verification_status === "verified"`) — show **RaidHive logo** seal |
+| `badges` | Array to render: `{ kind: "x", variant: "blue" }` and/or `{ kind: "raidhive" }` |
+
+**Display rules**
+
+1. X tier + RaidHive verified → **two** icons (X tier + RaidHive logo).
+2. RaidHive verified, `xBadgeType === "none"` → **only** RaidHive logo.
+3. X tier only, not RaidHive verified → **only** X tier (no RaidHive logo).
+4. Neither → no badges.
+
+Do not conflate X OAuth or `verify-x` follow with `raidHiveVerified`. Eligibility `POST /api/eligibility/verify` sets the RaidHive seal.
+
+Reputation and eligibility responses include `xBadgeType`, `raidHiveVerified`, and `badges` (legacy `badgeType` on reputation = `xBadgeType`).
 
 ---
 

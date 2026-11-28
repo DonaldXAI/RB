@@ -3,6 +3,7 @@ import { z } from "zod";
 import { asUsdc, assertWalletAddress, HttpError, parseBody, supabase, throwDb } from "../config.js";
 import { currentUser, requireUser } from "../middleware/auth.js";
 import { MIN_LIFETIME_PUBLIC_POSTS } from "../lib/activityPolicy.js";
+import { buildProfileBadges } from "../lib/badges.js";
 import { persistXBadge } from "../lib/xBadge.js";
 import { assessCryptoActivity } from "../services/openai.js";
 import { getRecentUserTweets, getUserProfile } from "../services/twitter.js";
@@ -75,9 +76,14 @@ router.get("/status", async (req, res, next) => {
     const notes = (row.data.ai_verification_notes ?? {}) as Record<string, unknown>;
     const checklist = notes.eligibilityChecklist as EligibilityChecklistItem[] | undefined;
 
+    const profileBadges = buildProfileBadges(
+      row.data.x_badge_type,
+      row.data.is_crypto_verified,
+      row.data.verification_status,
+    );
     res.json({
       ok: true,
-      passed: row.data.is_crypto_verified === true && row.data.verification_status === "verified",
+      passed: profileBadges.raidHiveVerified,
       verificationStatus: row.data.verification_status,
       isCryptoVerified: row.data.is_crypto_verified,
       accountAgeDays: row.data.account_age_days,
@@ -85,7 +91,9 @@ router.get("/status", async (req, res, next) => {
       postsCount: row.data.posts_count,
       lastCheckAt: notes.eligibilityLastCheckAt ?? null,
       checklist: checklist ?? [],
-      xBadgeType: row.data.x_badge_type ?? "none",
+      xBadgeType: profileBadges.xBadgeType,
+      raidHiveVerified: profileBadges.raidHiveVerified,
+      badges: profileBadges.badges,
       badgeMultiplier: asUsdc(row.data.badge_multiplier ?? 1),
     });
   } catch (error) {
@@ -248,6 +256,11 @@ router.post("/verify", async (req, res, next) => {
       .single();
     if (saved.error) throwDb(saved.error, "save eligibility result");
 
+    const profileBadges = buildProfileBadges(
+      badge.xBadgeType,
+      saved.data.is_crypto_verified,
+      saved.data.verification_status,
+    );
     res.json({
       ok: true,
       passed,
@@ -264,7 +277,9 @@ router.post("/verify", async (req, res, next) => {
       checklist,
       lastCheckAt,
       canRecheckImmediately: walletOnlyFail,
-      xBadgeType: badge.xBadgeType,
+      xBadgeType: profileBadges.xBadgeType,
+      raidHiveVerified: profileBadges.raidHiveVerified,
+      badges: profileBadges.badges,
       badgeMultiplier: badge.badgeMultiplier,
     });
   } catch (error) {
