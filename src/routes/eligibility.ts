@@ -164,13 +164,19 @@ router.post("/verify", async (req, res, next) => {
 
     const postsOk = xProfile.tweetCount >= MIN_PUBLIC_POSTS;
     const postsToGo = Math.max(0, MIN_PUBLIC_POSTS - xProfile.tweetCount);
+    const usedHeuristicOnly = Boolean(
+      risk.reason?.includes("while AI review is unavailable") ||
+        risk.reason?.includes("Passed basic activity heuristics"),
+    );
     let activityMessage = postsOk
-      ? "Your public post history looks sufficient."
+      ? usedHeuristicOnly
+        ? "Post count meets the minimum (AI activity review skipped — add OpenAI credits for full review)."
+        : "Your public post history looks sufficient."
       : `Post ${postsToGo} more public posts on X, then re-check.`;
     if (postsOk && risk.isBotLikely) {
       activityMessage =
         risk.reason ||
-        "Post genuinely on Crypto Twitter — your activity did not pass our AI review. Re-check after more real engagement.";
+        "Post genuinely on Crypto Twitter — your activity did not pass our review. Re-check after more real engagement.";
     }
     const activityOk = postsOk && !risk.isBotLikely;
     checklist.push({

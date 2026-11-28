@@ -29,8 +29,15 @@ export function mapXBadgeType(data: Record<string, unknown>): XBadgeType {
   const verifiedType = String(data.verifiedType ?? data.verified_type ?? "")
     .trim()
     .toLowerCase();
-  if (verifiedType === "business") return "gold";
-  if (verifiedType === "government") return "grey";
+  if (verifiedType.includes("business")) return "gold";
+  if (verifiedType.includes("government") || verifiedType === "gov") return "grey";
+
+  const legacy = String(data.isVerified ?? data.is_verified ?? "")
+    .trim()
+    .toLowerCase();
+  if (legacy === "business" || legacy === "gold") return "gold";
+  if (legacy === "government" || legacy === "grey" || legacy === "gray") return "grey";
+
   if (data.isBlueVerified === true || data.is_blue_verified === true) return "blue";
   return "none";
 }
