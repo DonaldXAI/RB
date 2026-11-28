@@ -46,6 +46,13 @@ export const adsBookLimiter = limiter({
   keyGenerator: clientKey,
 });
 
+/** Founder campaign creation (spam / DB abuse). */
+export const campaignsLaunchLimiter = limiter({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  keyGenerator: clientKey,
+});
+
 function adminKey(req: Request): string {
   const wallet = (req.get("x-admin-wallet") ?? "").trim();
   if (wallet) return `admin:${wallet}`;

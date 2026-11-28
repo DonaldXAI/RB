@@ -4,7 +4,7 @@
 
 - Set `NODE_ENV=production` on Render (enforces https `FRONTEND_ORIGIN` / `CORS_EXTRA_ORIGINS`).
 - Set **`ADMIN_TELEGRAM_CHAT_ID`** on production (escrow underfunding alerts; logs always).
-- Optional debug: `PUBLIC_ROUTE_MANIFEST=1` exposes full route list on `GET /api` in production.
+- Production `GET /api` returns route **count only** (full manifest is dev-only; do not rely on `PUBLIC_ROUTE_MANIFEST` in prod).
 - Never add env vars whose names match `*PRIVATE*KEY*`, `*MNEMONIC*`, etc. (startup aborts).
 - Rotate `SUPABASE_SERVICE_ROLE_KEY`, `HELIUS_API_KEY` if leaked.
 
@@ -36,7 +36,7 @@ Templates, drafts, and saved raids are **Render API only**.
 
 ## Verify
 
-- `GET /api` → `cors.allowedOrigins`; production `routes` is `{ count: N }` unless `PUBLIC_ROUTE_MANIFEST=1`.
+- `GET /api` → `cors.allowedOrigins`; production `routes` is `{ count: N }` only.
 - Deposit: exact USDC on single-tx and split-tx.
 - Admin: SIWS only; 3-minute TTL; audit required on money-moving POSTs.
 

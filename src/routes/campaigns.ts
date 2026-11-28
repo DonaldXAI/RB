@@ -17,6 +17,7 @@ import {
 } from "../config.js";
 import { mapPublicCampaign, PUBLIC_CAMPAIGN_COLUMNS } from "../lib/campaignPublic.js";
 import { currentUser, requireUser } from "../middleware/auth.js";
+import { campaignsLaunchLimiter } from "../middleware/rateLimits.js";
 import { verifyUsdcCredit } from "../services/helius.js";
 
 const router = Router();
@@ -181,7 +182,7 @@ function parseLaunchBody(body: unknown) {
   };
 }
 
-router.post("/launch", async (req, res, next) => {
+router.post("/launch", campaignsLaunchLimiter, async (req, res, next) => {
   try {
     const user = currentUser(req);
     const body = parseLaunchBody(req.body);

@@ -65,10 +65,8 @@ export const ROUTE_MANIFEST = [
 ] as const;
 
 export function routeManifestForResponse(): { routes: string[] | { count: number }; routeManifestPublic: boolean } {
-  const exposeFull =
-    process.env.NODE_ENV !== "production" || process.env.PUBLIC_ROUTE_MANIFEST === "1" || process.env.PUBLIC_ROUTE_MANIFEST === "true";
-  if (exposeFull) {
-    return { routes: [...ROUTE_MANIFEST], routeManifestPublic: true };
+  if (process.env.NODE_ENV === "production") {
+    return { routes: { count: ROUTE_MANIFEST.length }, routeManifestPublic: false };
   }
-  return { routes: { count: ROUTE_MANIFEST.length }, routeManifestPublic: false };
+  return { routes: [...ROUTE_MANIFEST], routeManifestPublic: true };
 }
