@@ -1,4 +1,5 @@
 import { config, HttpError, type RaidAction } from "../config.js";
+import { ACTIVITY_TWEET_MAX_PAGES, ACTIVITY_TWEET_SAMPLE_SIZE } from "../lib/activityPolicy.js";
 
 const BASE = "https://api.twitterapi.io";
 const MIN_ACCOUNT_AGE_MS = 90 * 24 * 60 * 60 * 1000;
@@ -46,7 +47,7 @@ export type RaidVerification = {
   tweetText: string;
 };
 
-type Query = Record<string, string | number | undefined>;
+type Query = Record<string, string | number | boolean | undefined>;
 
 async function twitterGet<T>(path: string, query: Query = {}): Promise<T> {
   const url = new URL(path, BASE);
@@ -148,6 +149,43 @@ export async function getUserProfile(
     profileImage: data.profilePicture ? String(data.profilePicture) : data.profileImageUrl ? String(data.profileImageUrl) : null,
     badgeType: mapXBadgeType(data),
   };
+}
+
+/** Recent public posts for crypto-activity eligibility (twitterapi.io). */
+export async function getRecentUserTweets(
+  profile: Pick<XProfile, "id" | "username">,
+  maxTweets = ACTIVITY_TWEET_SAMPLE_SIZE,
+): Promise<string[]> {
+  const texts: string[] = [];
+  let cursor = "";
+  const queryUserId = profile.id.trim() ? profile.id : undefined;
+  const queryUserName = queryUserId ? undefined : normalizeHandle(profile.username);
+
+  for (let page = 0; page < ACTIVITY_TWEET_MAX_PAGES && texts.length < maxTweets; page += 1) {
+    const body = await twitterGet<{
+      status?: string;
+      data?: { tweets?: Record<string, unknown>[] };
+      has_next_page?: boolean;
+      next_cursor?: string;
+    }>("/twitter/user/last_tweets", {
+      userId: queryUserId,
+      userName: queryUserName,
+      cursor,
+      includeReplies: true,
+    });
+
+    if (body.status === "error") break;
+    const list = body.data?.tweets ?? [];
+    for (const raw of list) {
+      const text = String(raw.text ?? "").trim();
+      if (text) texts.push(text.slice(0, 280));
+      if (texts.length >= maxTweets) break;
+    }
+    if (!body.has_next_page || !body.next_cursor || list.length === 0) break;
+    cursor = body.next_cursor;
+  }
+
+  return texts;
 }
 
 async function userFollows(sourceUserName: string, targetUserName: string): Promise<boolean> {

@@ -2,9 +2,10 @@ import { Router } from "express";
 import { z } from "zod";
 import { asUsdc, assertWalletAddress, HttpError, parseBody, supabase, throwDb } from "../config.js";
 import { currentUser, requireUser } from "../middleware/auth.js";
+import { MIN_LIFETIME_PUBLIC_POSTS } from "../lib/activityPolicy.js";
 import { persistXBadge } from "../lib/xBadge.js";
-import { assessBotRisk } from "../services/openai.js";
-import { getUserProfile } from "../services/twitter.js";
+import { assessCryptoActivity } from "../services/openai.js";
+import { getRecentUserTweets, getUserProfile } from "../services/twitter.js";
 
 const router = Router();
 router.use(requireUser);
@@ -13,7 +14,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const MIN_ACCOUNT_AGE_DAYS = 90;
 const MIN_FOLLOWERS_DEFAULT = 150;
 const MIN_FOLLOWERS_BADGE = 100;
-const MIN_PUBLIC_POSTS = 20;
+const MIN_PUBLIC_POSTS = MIN_LIFETIME_PUBLIC_POSTS;
 const BADGE_FOLLOWER_TYPES = new Set(["gold", "blue", "grey"]);
 
 export type EligibilityChecklistItem = {
@@ -133,7 +134,8 @@ router.post("/verify", async (req, res, next) => {
 
     const xProfile = await getUserProfile(xUsername, { requireMinAge: false });
     const badge = await persistXBadge(user.id, xProfile.badgeType);
-    const risk = await assessBotRisk(xProfile);
+    const recentTweets = await getRecentUserTweets(xProfile);
+    const activityReview = await assessCryptoActivity(xProfile, recentTweets);
     const followerTarget = minFollowers(badge.xBadgeType);
 
     const checklist: EligibilityChecklistItem[] = [];
@@ -164,21 +166,19 @@ router.post("/verify", async (req, res, next) => {
 
     const postsOk = xProfile.tweetCount >= MIN_PUBLIC_POSTS;
     const postsToGo = Math.max(0, MIN_PUBLIC_POSTS - xProfile.tweetCount);
-    const usedHeuristicOnly = Boolean(
-      risk.reason?.includes("while AI review is unavailable") ||
-        risk.reason?.includes("Passed basic activity heuristics"),
-    );
+    const cryptoOk = activityReview.isCryptoTwitter && !activityReview.isBotLikely;
     let activityMessage = postsOk
-      ? usedHeuristicOnly
-        ? "Post count meets the minimum (AI activity review skipped — add OpenAI credits for full review)."
-        : "Your public post history looks sufficient."
-      : `Post ${postsToGo} more public posts on X, then re-check.`;
-    if (postsOk && risk.isBotLikely) {
+      ? cryptoOk
+        ? activityReview.reviewMethod === "ai"
+          ? `Crypto activity OK — ${activityReview.cryptoRelatedCount} of ${activityReview.tweetsReviewed} recent posts look crypto-related.`
+          : `Crypto activity OK — ${activityReview.cryptoRelatedCount} of ${activityReview.tweetsReviewed} recent posts (keyword check).`
+        : activityReview.reason
+      : `Post ${postsToGo} more public posts on X (need ${MIN_PUBLIC_POSTS} lifetime), then re-check.`;
+    if (postsOk && !cryptoOk && !activityMessage) {
       activityMessage =
-        risk.reason ||
-        "Post genuinely on Crypto Twitter — your activity did not pass our review. Re-check after more real engagement.";
+        "Post more about crypto (tokens, memecoins, chains, DeFi, NFTs, web3), then re-check.";
     }
-    const activityOk = postsOk && !risk.isBotLikely;
+    const activityOk = postsOk && cryptoOk;
     checklist.push({
       id: "activity",
       passed: activityOk,
@@ -197,12 +197,12 @@ router.post("/verify", async (req, res, next) => {
     });
 
     const passed = checklist.every((item) => item.passed);
+    const failedIds = checklist.filter((item) => !item.passed).map((item) => item.id);
+    const walletOnlyFail = failedIds.length === 1 && failedIds[0] === "wallet";
     const finishedAt = new Date().toISOString();
-
-    const resultNotes = {
+    const resultNotes: Record<string, unknown> = {
       ...notes,
-      eligibilityStatus: passed ? "passed" : "failed",
-      eligibilityLastCheckAt: finishedAt,
+      eligibilityStatus: passed ? "passed" : walletOnlyFail ? "pending_wallet" : "failed",
       eligibilityChecklist: checklist,
       eligibility: {
         checkedAt: finishedAt,
@@ -212,11 +212,23 @@ router.post("/verify", async (req, res, next) => {
         following: xProfile.following,
         postsCount: xProfile.tweetCount,
         tweetCount: xProfile.tweetCount,
-        isBotLikely: risk.isBotLikely,
-        botReason: risk.reason,
+        isBotLikely: activityReview.isBotLikely,
+        isCryptoTwitter: activityReview.isCryptoTwitter,
+        activityReason: activityReview.reason,
+        activityReviewMethod: activityReview.reviewMethod,
+        tweetsSampled: activityReview.tweetsReviewed,
+        cryptoRelatedInSample: activityReview.cryptoRelatedCount,
         followerTarget,
+        walletOnlyFail,
       },
     };
+    if (walletOnlyFail) {
+      delete resultNotes.eligibilityLastCheckAt;
+    } else {
+      resultNotes.eligibilityLastCheckAt = finishedAt;
+    }
+    const lastCheckAt =
+      typeof resultNotes.eligibilityLastCheckAt === "string" ? resultNotes.eligibilityLastCheckAt : null;
 
     const saved = await supabase
       .from("profiles")
@@ -225,7 +237,7 @@ router.post("/verify", async (req, res, next) => {
         x_followers: xProfile.followers,
         posts_count: xProfile.tweetCount,
         x_badge_type: badge.xBadgeType,
-        verification_status: passed ? "verified" : "rejected",
+        verification_status: passed ? "verified" : walletOnlyFail ? "pending" : "rejected",
         is_crypto_verified: passed,
         ai_verification_notes: resultNotes,
       })
@@ -237,16 +249,21 @@ router.post("/verify", async (req, res, next) => {
     if (saved.error) throwDb(saved.error, "save eligibility result");
 
     res.json({
-      ok: passed,
+      ok: true,
       passed,
-      message: passed ? "Eligibility check passed" : "Eligibility check not passed",
+      message: passed
+        ? "Eligibility check passed"
+        : walletOnlyFail
+          ? "Almost there — save your payout wallet, then run Re-Check."
+          : "Some requirements are not met yet. See the checklist.",
       verificationStatus: saved.data.verification_status,
       isCryptoVerified: saved.data.is_crypto_verified,
       accountAgeDays: xProfile.ageDays,
       followers: xProfile.followers,
       postsCount: xProfile.tweetCount,
       checklist,
-      lastCheckAt: finishedAt,
+      lastCheckAt,
+      canRecheckImmediately: walletOnlyFail,
       xBadgeType: badge.xBadgeType,
       badgeMultiplier: badge.badgeMultiplier,
     });

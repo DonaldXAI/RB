@@ -283,7 +283,7 @@ If either false, payout fails with **403** `"Verify X and Telegram before reques
 
 `passed` === `isCryptoVerified === true` **and** `verificationStatus === "verified"`.
 
-`POST /api/eligibility/verify` — body `{}`, max once per 24h. Same shape + updates profile. Requires `x_username` set first.
+`POST /api/eligibility/verify` — body `{}`, max once per 24h (except `canRecheckImmediately: true` when only the wallet row failed). Response always has **`ok: true`** on HTTP 200; use **`passed`** for badge outcome, not `ok`. Activity row uses AI on **recent tweet samples** for crypto/web3 topics. Same fields + updates profile. Requires `x_username` set first.
 
 ### Reputation (UI badges — includes social flags)
 
