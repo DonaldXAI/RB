@@ -1,6 +1,18 @@
 import { Router } from "express";
 import { z } from "zod";
-import { AD_BANNER_SLOT_COUNT, AD_PRICE_USDC, config, HttpError, parseBody, parseParams, supabase, throwDb } from "../config.js";
+import {
+  AD_DURATION_HOURS,
+  AD_PRICE_USDC,
+  AD_QUEUE_SLOT_COUNT,
+  AD_VISIBLE_SLOT_COUNT,
+  config,
+  HttpError,
+  parseBody,
+  parseParams,
+  supabase,
+  throwDb,
+} from "../config.js";
+import { padAdSections } from "../lib/adSlots.js";
 import { currentUser, requireUser } from "../middleware/auth.js";
 import { adsActionLimiter, adsBookLimiter } from "../middleware/rateLimits.js";
 import { verifyUsdcTransfer } from "../services/helius.js";
@@ -17,20 +29,9 @@ const txSignature = z.string().trim().regex(/^[1-9A-HJ-NP-Za-km-z]{64,128}$/);
 const bookingId = z.string().uuid();
 
 const publicAdColumns =
-  "id, user_id, headline, image_url, target_url, status, starts_at, ends_at, impressions, clicks, expires_at";
-
-const QUEUE_SLOT_COUNT = AD_BANNER_SLOT_COUNT - 1;
+  "id, user_id, headline, image_url, target_url, status, starts_at, ends_at, impressions, clicks, expires_at, created_at";
 
 type AdRow = Record<string, unknown>;
-
-function padBannerSlots(active: AdRow | null, queue: AdRow[]): (AdRow | null)[] {
-  const slots: (AdRow | null)[] = new Array<AdRow | null>(AD_BANNER_SLOT_COUNT).fill(null);
-  slots[0] = active;
-  for (let i = 0; i < QUEUE_SLOT_COUNT; i += 1) {
-    slots[i + 1] = queue[i] ?? null;
-  }
-  return slots;
-}
 
 router.get("/slots", async (_req, res, next) => {
   try {
@@ -38,30 +39,36 @@ router.get("/slots", async (_req, res, next) => {
       .from("ad_banner_bookings")
       .select(publicAdColumns)
       .eq("status", "active")
-      .order("starts_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (active.error) throwDb(active.error, "load active ad");
+      .order("starts_at", { ascending: true })
+      .limit(AD_VISIBLE_SLOT_COUNT);
+    if (active.error) throwDb(active.error, "load active ads");
 
     const queued = await supabase
       .from("ad_banner_bookings")
       .select(publicAdColumns)
       .eq("status", "queued")
       .order("starts_at", { ascending: true })
-      .limit(QUEUE_SLOT_COUNT);
+      .limit(AD_QUEUE_SLOT_COUNT);
     if (queued.error) throwDb(queued.error, "load queued ads");
 
-    const queue = (queued.data ?? []) as AdRow[];
-    const slots = padBannerSlots((active.data as AdRow | null) ?? null, queue);
+    const visibleRows = (active.data ?? []) as AdRow[];
+    const queueRows = (queued.data ?? []) as AdRow[];
+    const padded = padAdSections(visibleRows, queueRows);
 
     res.json({
       ok: true,
-      slotCount: AD_BANNER_SLOT_COUNT,
+      slotCount: AD_VISIBLE_SLOT_COUNT + AD_QUEUE_SLOT_COUNT,
+      visibleSlotCount: AD_VISIBLE_SLOT_COUNT,
+      queueSlotCount: AD_QUEUE_SLOT_COUNT,
       priceUsdc: AD_PRICE_USDC,
-      active: active.data,
-      queue,
-      slots,
-      filledCount: slots.filter(Boolean).length,
+      durationHours: AD_DURATION_HOURS,
+      visible: padded.visible,
+      queue: padded.queue,
+      slots: padded.slots,
+      slotMeta: padded.slotMeta,
+      /** @deprecated use visible + queue */
+      active: visibleRows[0] ?? null,
+      filledCount: padded.slots.filter(Boolean).length,
     });
   } catch (error) {
     next(error);
@@ -73,7 +80,7 @@ router.get("/my-ads", requireUser, async (req, res, next) => {
     const user = currentUser(req);
     const rows = await supabase
       .from("ad_banner_bookings")
-      .select(publicAdColumns + ", tx_signature, created_at, price_usdc")
+      .select(publicAdColumns + ", tx_signature")
       .eq("user_id", user.id)
       .order("created_at", { ascending: false });
     if (rows.error) throwDb(rows.error, "load my ads");
@@ -136,7 +143,7 @@ router.post("/reserve", requireUser, adsBookLimiter, async (req, res, next) => {
       .maybeSingle();
     if (row.error) throwDb(row.error, "load reservation");
 
-    res.status(201).json({ ok: true, reservation: row.data });
+    res.status(201).json({ ok: true, reservation: row.data, priceUsdc: AD_PRICE_USDC, durationHours: AD_DURATION_HOURS });
   } catch (error) {
     next(error);
   }
@@ -195,9 +202,9 @@ router.post("/book", requireUser, adsBookLimiter, async (req, res, next) => {
     });
     if (booked.error) throwDb(booked.error, "book ad");
 
-    const row = await supabase.from("ad_banner_bookings").select("*").eq("id", booked.data as string).maybeSingle();
+    const row = await supabase.from("ad_banner_bookings").select(publicAdColumns + ", tx_signature").eq("id", booked.data as string).maybeSingle();
     if (row.error) throwDb(row.error, "load ad booking");
-    res.status(201).json({ ok: true, booking: row.data });
+    res.status(201).json({ ok: true, booking: row.data, priceUsdc: AD_PRICE_USDC, durationHours: AD_DURATION_HOURS });
   } catch (error) {
     next(error);
   }

@@ -395,9 +395,8 @@ alter table public.ad_banner_bookings add constraint ad_banner_bookings_status_c
   check (status = any (array['queued'::text, 'active'::text, 'completed'::text, 'refunded'::text, 'reserved'::text, 'expired'::text]));
 
 drop index if exists ad_banner_one_active_uidx;
-create unique index ad_banner_one_active_uidx
-  on public.ad_banner_bookings ((true))
-  where status = 'active';
+
+alter table public.ad_banner_bookings add column if not exists price_usdc numeric not null default 100;
 
 create index if not exists ad_banner_rotation_idx
   on public.ad_banner_bookings (status, starts_at, ends_at);
@@ -866,89 +865,7 @@ begin
 end;
 $$;
 
-create or replace function public.reserve_ad_banner_slot(p_user_id uuid) returns uuid
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  booking_id uuid;
-begin
-  perform pg_advisory_xact_lock(8142001);
-
-  if exists (
-    select 1 from public.ad_banner_bookings
-    where status = 'reserved' and expires_at > now() and user_id <> p_user_id
-  ) then
-    raise exception 'RESERVATION_IN_USE';
-  end if;
-
-  if exists (
-    select 1 from public.ad_banner_bookings
-    where user_id = p_user_id and status = 'reserved' and expires_at > now()
-  ) then
-    select id into booking_id
-    from public.ad_banner_bookings
-    where user_id = p_user_id and status = 'reserved' and expires_at > now()
-    order by created_at desc limit 1;
-    return booking_id;
-  end if;
-
-  insert into public.ad_banner_bookings (user_id, status, expires_at, starts_at, ends_at)
-  values (p_user_id, 'reserved', now() + interval '15 minutes', now(), now() + interval '15 minutes')
-  returning id into booking_id;
-
-  return booking_id;
-end;
-$$;
-
-create or replace function public.confirm_ad_banner_booking(
-  p_reservation_id uuid,
-  p_user_id uuid,
-  p_headline text,
-  p_image_url text,
-  p_target_url text,
-  p_tx_signature text
-) returns uuid
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  booking public.ad_banner_bookings%rowtype;
-  latest timestamptz;
-begin
-  perform pg_advisory_xact_lock(8142001);
-
-  select * into booking
-  from public.ad_banner_bookings
-  where id = p_reservation_id and user_id = p_user_id and status = 'reserved'
-  for update;
-
-  if not found then raise exception 'RESERVATION_NOT_FOUND'; end if;
-  if booking.expires_at is null or booking.expires_at <= now() then raise exception 'RESERVATION_EXPIRED'; end if;
-
-  insert into public.used_transactions (signature, purpose) values (p_tx_signature, 'ad');
-
-  select max(ends_at) into latest from public.ad_banner_bookings where status in ('active', 'queued');
-
-  if latest is null then
-    update public.ad_banner_bookings
-    set headline = p_headline, image_url = p_image_url, target_url = p_target_url,
-        tx_signature = p_tx_signature, status = 'active', expires_at = null,
-        starts_at = now(), ends_at = now() + interval '24 hours'
-    where id = booking.id;
-  else
-    update public.ad_banner_bookings
-    set headline = p_headline, image_url = p_image_url, target_url = p_target_url,
-        tx_signature = p_tx_signature, status = 'queued', expires_at = null,
-        starts_at = latest, ends_at = latest + interval '24 hours'
-    where id = booking.id;
-  end if;
-
-  return booking.id;
-end;
-$$;
+-- Ad RPCs: run sql/ad_banner_three_visible.sql (3 visible + 3 queue).
 
 create or replace function public.release_expired_ad_reservations() returns integer
 language plpgsql

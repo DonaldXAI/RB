@@ -94,8 +94,11 @@ export const config = loadConfig();
 export const GAS_FEE_USDC = 0.15;
 export const MIN_PAYOUT_USDC = 2;
 export const AD_PRICE_USDC = 100;
-/** Home banner: 1 live slot + 5 queued slots (Lovable expects a fixed-size list). */
-export const AD_BANNER_SLOT_COUNT = 6;
+export const AD_DURATION_HOURS = 24;
+/** Homepage: 3 visible banners + 3 queued (6 total). */
+export const AD_VISIBLE_SLOT_COUNT = 3;
+export const AD_QUEUE_SLOT_COUNT = 3;
+export const AD_BANNER_SLOT_COUNT = AD_VISIBLE_SLOT_COUNT + AD_QUEUE_SLOT_COUNT;
 export const VESTING_HOURS = 12;
 export const REFERRAL_DEPOSIT_RATE = 0.02;
 export const REFERRAL_VEST_BONUS_USDC = 0.05;
@@ -217,6 +220,7 @@ const DB_MESSAGES: Record<string, { status: number; message: string }> = {
   RESERVATION_NOT_FOUND: { status: 404, message: "Ad reservation not found" },
   RESERVATION_EXPIRED: { status: 409, message: "Ad reservation has expired" },
   RESERVATION_IN_USE: { status: 409, message: "Ad slot is temporarily reserved" },
+  AD_SLOTS_FULL: { status: 409, message: "All ad spaces are booked. Try again when a slot opens." },
 };
 
 export function throwDb(error: { message: string; code?: string }, scope: string): never {
@@ -250,7 +254,7 @@ export function throwDb(error: { message: string; code?: string }, scope: string
       throw new HttpError(409, "Transaction signature was already used");
     }
     if (error.message.includes("ad_banner_one_active")) {
-      throw new HttpError(409, "Another banner is already active");
+      throw new HttpError(409, "All visible ad spaces are full");
     }
     throw new HttpError(409, "This record already exists");
   }

@@ -27,6 +27,20 @@
 | Signed-in verification pending | `GET /api/account/verification` → `{ status, flags, pending[] }` |
 | Founder flags | `GET /api/founders/flags` → social/wallet gates + `campaignsAwaitingDeposit` |
 
+### Homepage ads (3 visible + 3 queue)
+
+**SQL (once):** `sql/ad_banner_three_visible.sql` in Supabase.
+
+| Route | Purpose |
+|-------|---------|
+| `GET /api/ads/slots` | Public: 6 slots — `slotMeta[]` (`Space 01`–`06`, `section: visible \| queue`, `state: available \| booked`) |
+| `POST /api/ads/reserve` | Auth: 15‑min hold |
+| `POST /api/ads/book` | Auth: `{ reservationId, headline, imageUrl, targetUrl, txSignature }` — **100 USDC** / **24h** to revenue wallet |
+| `POST /api/ads/:id/impression` | Count view (visible ads only in UI) |
+| `GET /api/ads/:id/click` | Redirect + click count |
+
+**UI:** Spaces **01–03** = live banners (`visible[]`). **04–06** = queued (`queue[]`). Grey **booked**, highlight **available**. User does not pick a slot number — next opening is automatic after reserve + pay. Upload banner to storage → `imageUrl` (https). Map project name → `headline`.
+
 ---
 
 ## 1. Campaign & history reads

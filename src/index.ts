@@ -4,7 +4,7 @@ import rateLimit from "express-rate-limit";
 import helmet from "helmet";
 import cron from "node-cron";
 import { allowedOriginsSet, CORS_ALLOWED_HEADERS } from "./corsPolicy.js";
-import { config, HttpError, REFERRAL_VEST_BONUS_USDC, supabase } from "./config.js";
+import { AD_VISIBLE_SLOT_COUNT, config, HttpError, REFERRAL_VEST_BONUS_USDC, supabase } from "./config.js";
 import accountRouter from "./routes/account.js";
 import adminRouter from "./routes/admin.js";
 import adsRouter from "./routes/ads.js";
@@ -128,6 +128,12 @@ async function releaseExpiredAdReservations(): Promise<number> {
   return Number(released.data ?? 0);
 }
 
+async function countActiveAds(): Promise<number> {
+  const active = await supabase.from("ad_banner_bookings").select("id", { count: "exact", head: true }).eq("status", "active");
+  if (active.error) throw new Error(active.error.message);
+  return active.count ?? 0;
+}
+
 async function rotateAdBanners(): Promise<{ completed: number; promoted: number }> {
   const now = new Date().toISOString();
   const completed = await supabase
@@ -138,29 +144,33 @@ async function rotateAdBanners(): Promise<{ completed: number; promoted: number 
     .select("id");
   if (completed.error) throw new Error(completed.error.message);
 
-  const active = await supabase.from("ad_banner_bookings").select("id").eq("status", "active").limit(1);
-  if (active.error) throw new Error(active.error.message);
-  if (active.data?.length) return { completed: completed.data?.length ?? 0, promoted: 0 };
+  let promoted = 0;
+  for (let step = 0; step < AD_VISIBLE_SLOT_COUNT; step += 1) {
+    const activeCount = await countActiveAds();
+    if (activeCount >= AD_VISIBLE_SLOT_COUNT) break;
 
-  const next = await supabase
-    .from("ad_banner_bookings")
-    .select("id")
-    .eq("status", "queued")
-    .lte("starts_at", now)
-    .order("starts_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
-  if (next.error) throw new Error(next.error.message);
-  if (!next.data) return { completed: completed.data?.length ?? 0, promoted: 0 };
+    const next = await supabase
+      .from("ad_banner_bookings")
+      .select("id")
+      .eq("status", "queued")
+      .lte("starts_at", now)
+      .order("starts_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (next.error) throw new Error(next.error.message);
+    if (!next.data) break;
 
-  const promoted = await supabase
-    .from("ad_banner_bookings")
-    .update({ status: "active" })
-    .eq("id", next.data.id)
-    .eq("status", "queued")
-    .select("id");
-  if (promoted.error) throw new Error(promoted.error.message);
-  return { completed: completed.data?.length ?? 0, promoted: promoted.data?.length ?? 0 };
+    const move = await supabase
+      .from("ad_banner_bookings")
+      .update({ status: "active" })
+      .eq("id", next.data.id)
+      .eq("status", "queued")
+      .select("id");
+    if (move.error) throw new Error(move.error.message);
+    if (move.data?.length) promoted += 1;
+  }
+
+  return { completed: completed.data?.length ?? 0, promoted };
 }
 
 async function expireCampaigns(): Promise<number> {

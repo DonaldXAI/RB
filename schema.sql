@@ -113,11 +113,12 @@ create table public.ad_banner_bookings (
   ends_at timestamptz not null,
   impressions integer not null default 0 check (impressions >= 0),
   clicks integer not null default 0 check (clicks >= 0),
+  price_usdc numeric not null default 100,
   created_at timestamptz not null default now()
 );
 
 create unique index ad_banner_tx_signature_uidx on public.ad_banner_bookings (tx_signature);
-create unique index ad_banner_one_active_uidx on public.ad_banner_bookings ((true)) where status = 'active';
+-- Up to 3 simultaneous visible banners (enforced in confirm_ad_banner_booking RPC).
 create index ad_banner_rotation_idx on public.ad_banner_bookings (status, starts_at, ends_at);
 
 create table public.used_transactions (
@@ -646,8 +647,17 @@ set search_path = public
 as $$
 declare
   booking_id uuid;
+  pipeline integer;
 begin
   perform pg_advisory_xact_lock(8142001);
+
+  select count(*) into pipeline
+  from public.ad_banner_bookings
+  where status in ('active', 'queued');
+
+  if pipeline >= 6 then
+    raise exception 'AD_SLOTS_FULL';
+  end if;
 
   if exists (
     select 1 from public.ad_banner_bookings
@@ -677,13 +687,14 @@ begin
   end if;
 
   insert into public.ad_banner_bookings (
-    user_id, status, expires_at, starts_at, ends_at
+    user_id, status, expires_at, starts_at, ends_at, price_usdc
   ) values (
     p_user_id,
     'reserved',
     now() + interval '15 minutes',
     now(),
-    now() + interval '15 minutes'
+    now() + interval '15 minutes',
+    100
   ) returning id into booking_id;
 
   return booking_id;
@@ -704,6 +715,8 @@ set search_path = public
 as $$
 declare
   booking public.ad_banner_bookings%rowtype;
+  active_count integer;
+  queue_count integer;
   latest timestamptz;
 begin
   perform pg_advisory_xact_lock(8142001);
@@ -720,11 +733,10 @@ begin
 
   insert into public.used_transactions (signature, purpose) values (p_tx_signature, 'ad');
 
-  select max(ends_at) into latest
-  from public.ad_banner_bookings
-  where status in ('active', 'queued');
+  select count(*) into active_count from public.ad_banner_bookings where status = 'active';
+  select count(*) into queue_count from public.ad_banner_bookings where status = 'queued';
 
-  if latest is null then
+  if active_count < 3 then
     update public.ad_banner_bookings
     set headline = p_headline,
         image_url = p_image_url,
@@ -732,10 +744,15 @@ begin
         tx_signature = p_tx_signature,
         status = 'active',
         expires_at = null,
+        price_usdc = 100,
         starts_at = now(),
         ends_at = now() + interval '24 hours'
     where id = booking.id;
-  else
+  elsif queue_count < 3 then
+    select max(ends_at) into latest
+    from public.ad_banner_bookings
+    where status in ('active', 'queued');
+
     update public.ad_banner_bookings
     set headline = p_headline,
         image_url = p_image_url,
@@ -743,9 +760,12 @@ begin
         tx_signature = p_tx_signature,
         status = 'queued',
         expires_at = null,
-        starts_at = latest,
-        ends_at = latest + interval '24 hours'
+        price_usdc = 100,
+        starts_at = coalesce(latest, now()),
+        ends_at = coalesce(latest, now()) + interval '24 hours'
     where id = booking.id;
+  else
+    raise exception 'AD_SLOTS_FULL';
   end if;
 
   return booking.id;

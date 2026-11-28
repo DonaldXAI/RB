@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { asUsdc, HttpError, parseBody, parseParams, supabase, throwDb, VESTING_HOURS } from "../config.js";
+import { AD_VISIBLE_SLOT_COUNT, asUsdc, HttpError, parseBody, parseParams, supabase, throwDb, VESTING_HOURS } from "../config.js";
 import { logAdminAction, logAdminActionOrThrow } from "../middleware/audit.js";
 import { requireAdmin } from "../middleware/adminAuth.js";
 import { verifyBatchPayoutTx } from "../services/helius.js";
@@ -339,17 +339,26 @@ router.post("/ads/:id/takedown", async (req, res, next) => {
     if (refunded.error) throwDb(refunded.error, "refund ad");
     if (!refunded.data) throw new HttpError(409, "Ad banner changed before takedown");
 
-    let promoted: { id: string; status: string; starts_at: string; ends_at: string } | null = null;
+    const promoted: { id: string; status: string; starts_at: string; ends_at: string }[] = [];
     if (existing.data.status === "active") {
-      const next = await supabase
-        .from("ad_banner_bookings")
-        .select("id, starts_at, ends_at")
-        .eq("status", "queued")
-        .order("starts_at", { ascending: true })
-        .limit(1)
-        .maybeSingle();
-      if (next.error) throwDb(next.error, "load next ad");
-      if (next.data) {
+      for (let step = 0; step < AD_VISIBLE_SLOT_COUNT; step += 1) {
+        const activeCount = await supabase
+          .from("ad_banner_bookings")
+          .select("id", { count: "exact", head: true })
+          .eq("status", "active");
+        if (activeCount.error) throwDb(activeCount.error, "count active ads");
+        if ((activeCount.count ?? 0) >= AD_VISIBLE_SLOT_COUNT) break;
+
+        const next = await supabase
+          .from("ad_banner_bookings")
+          .select("id, starts_at, ends_at")
+          .eq("status", "queued")
+          .order("starts_at", { ascending: true })
+          .limit(1)
+          .maybeSingle();
+        if (next.error) throwDb(next.error, "load next ad");
+        if (!next.data) break;
+
         const startsAt = Date.parse(next.data.starts_at as string);
         const endsAt = Date.parse(next.data.ends_at as string);
         const keepWindow = startsAt <= now.getTime() && endsAt > now.getTime();
@@ -367,11 +376,14 @@ router.post("/ads/:id/takedown", async (req, res, next) => {
           .select("id, status, starts_at, ends_at")
           .maybeSingle();
         if (update.error) throwDb(update.error, "promote ad");
-        promoted = update.data;
+        if (update.data) promoted.push(update.data);
       }
     }
 
-    await logAdminActionOrThrow(req, "ads.takedown", "ad_banner", id, { previousStatus: existing.data.status, promoted: promoted?.id ?? null });
+    await logAdminActionOrThrow(req, "ads.takedown", "ad_banner", id, {
+      previousStatus: existing.data.status,
+      promoted: promoted.map((row) => row.id),
+    });
 
     res.json({ ok: true, refunded: refunded.data, promoted });
   } catch (error) {
